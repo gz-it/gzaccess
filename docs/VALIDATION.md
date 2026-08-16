@@ -148,3 +148,25 @@ Alcance validado:
 Limitaciones:
 
 - Las pruebas usan stores en memoria. El store Prisma esta implementado, pero falta aplicar migraciones contra PostgreSQL real cuando haya VPS/Docker.
+
+## 2026-08-16 - Fase 2 panel web inicial
+
+Comandos ejecutados:
+
+- `pnpm format`: paso.
+- `pnpm lint`: paso.
+- `pnpm typecheck`: paso.
+- `pnpm test --config.strict-ssl=false`: paso, 3 archivos y 15 tests.
+- `pnpm build --config.strict-ssl=false`: paso.
+
+Alcance validado:
+
+- Panel web autenticado para crear edificios.
+- Panel web autenticado para crear unidades.
+- Panel web autenticado para registrar residentes individuales.
+- Carga inicial de edificios de la organizacion del usuario activo.
+
+Limitaciones:
+
+- Las unidades creadas se mantienen en estado local de la sesion web porque todavia no existe endpoint de listado de unidades.
+- La invitacion real por email sigue pendiente hasta configurar proveedor de correo.

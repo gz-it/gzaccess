@@ -18,6 +18,20 @@ interface Tokens {
   expiresInSeconds: number;
 }
 
+interface Building {
+  id: string;
+  organizationId: string;
+  name: string;
+  address: string;
+  timezone: string;
+}
+
+interface Unit {
+  id: string;
+  buildingId: string;
+  label: string;
+}
+
 const apiBaseUrl = "/api/v1";
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
@@ -25,6 +39,9 @@ const refreshTokenKey = "gzaccess.refreshToken";
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [user, setUser] = useState<User | undefined>();
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [selectedBuildingId, setSelectedBuildingId] = useState("");
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
@@ -36,6 +53,15 @@ function App() {
 
     void loadCurrentUser(token, setUser, setStatus);
   }, []);
+
+  useEffect(() => {
+    if (!user?.organizationIds[0]) {
+      setBuildings([]);
+      return;
+    }
+
+    void loadBuildings(user.organizationIds[0], setBuildings, setStatus);
+  }, [user]);
 
   const navLabel = useMemo(() => {
     if (!user) {
@@ -140,7 +166,102 @@ function App() {
     localStorage.removeItem(accessTokenKey);
     localStorage.removeItem(refreshTokenKey);
     setUser(undefined);
+    setBuildings([]);
+    setUnits([]);
+    setSelectedBuildingId("");
     setStatus("");
+  }
+
+  async function submitBuilding(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user?.organizationIds[0]) {
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{ building: Building }>(
+        "/buildings",
+        {
+          organizationId: user.organizationIds[0],
+          name: String(form.get("name")),
+          address: String(form.get("address")),
+          timezone: String(form.get("timezone")),
+        },
+      );
+      setBuildings((current) => [...current, response.building]);
+      setSelectedBuildingId(response.building.id);
+      setStatus("Edificio creado");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitUnit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const buildingId = String(form.get("buildingId") || selectedBuildingId);
+    if (!buildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{ unit: Unit }>("/units", {
+        buildingId,
+        label: String(form.get("label")),
+      });
+      setUnits((current) => [...current, response.unit]);
+      setStatus("Unidad creada");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitResident(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const buildingId = String(form.get("buildingId") || selectedBuildingId);
+    if (!buildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{
+        personId: string;
+        activationToken?: string;
+      }>("/residents", {
+        buildingId,
+        unitId: String(form.get("unitId") || "") || undefined,
+        firstName: String(form.get("firstName")),
+        lastName: String(form.get("lastName")),
+        documentNumber: String(form.get("documentNumber") || "") || undefined,
+        email: String(form.get("email") || "") || undefined,
+        phone: String(form.get("phone") || "") || undefined,
+      });
+      setStatus(response.activationToken ?? `Residente ${response.personId}`);
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -172,23 +293,89 @@ function App() {
         </header>
 
         {user ? (
-          <section className="status-grid" aria-label="Sesion">
-            <article>
-              <span>Email</span>
-              <strong>{user.email}</strong>
-              <p>{user.roles.join(", ")}</p>
-            </article>
-            <article>
-              <span>Organizaciones</span>
-              <strong>{user.organizationIds.length}</strong>
-              <p>{user.organizationIds.join(", ")}</p>
-            </article>
-            <article>
-              <span>Estado</span>
-              <strong>Autenticado</strong>
-              <p>{status || "Token de acceso vigente"}</p>
-            </article>
-          </section>
+          <div className="admin-layout">
+            <section className="status-grid" aria-label="Sesion">
+              <article>
+                <span>Email</span>
+                <strong>{user.email}</strong>
+                <p>{user.roles.join(", ")}</p>
+              </article>
+              <article>
+                <span>Organizaciones</span>
+                <strong>{user.organizationIds.length}</strong>
+                <p>{user.organizationIds.join(", ")}</p>
+              </article>
+              <article>
+                <span>Estado</span>
+                <strong>Autenticado</strong>
+                <p>{status || "Token de acceso vigente"}</p>
+              </article>
+            </section>
+
+            <section className="ops-grid" aria-label="Administracion">
+              <Panel title="Edificio">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Crear edificio"
+                  onSubmit={submitBuilding}
+                >
+                  <Field label="Nombre" name="name" />
+                  <Field label="Direccion" name="address" />
+                  <Field
+                    label="Zona horaria"
+                    name="timezone"
+                    defaultValue="America/Buenos_Aires"
+                  />
+                </AdminForm>
+              </Panel>
+
+              <Panel title="Unidad">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Crear unidad"
+                  onSubmit={submitUnit}
+                >
+                  <BuildingSelect
+                    buildings={buildings}
+                    selectedBuildingId={selectedBuildingId}
+                    setSelectedBuildingId={setSelectedBuildingId}
+                  />
+                  <Field label="Unidad" name="label" />
+                </AdminForm>
+              </Panel>
+
+              <Panel title="Residente">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Registrar residente"
+                  onSubmit={submitResident}
+                >
+                  <BuildingSelect
+                    buildings={buildings}
+                    selectedBuildingId={selectedBuildingId}
+                    setSelectedBuildingId={setSelectedBuildingId}
+                  />
+                  <UnitSelect units={units} buildingId={selectedBuildingId} />
+                  <div className="split-fields">
+                    <Field label="Nombre" name="firstName" />
+                    <Field label="Apellido" name="lastName" />
+                  </div>
+                  <Field
+                    label="Documento"
+                    name="documentNumber"
+                    required={false}
+                  />
+                  <Field
+                    label="Email"
+                    name="email"
+                    required={false}
+                    type="email"
+                  />
+                  <Field label="Telefono" name="phone" required={false} />
+                </AdminForm>
+              </Panel>
+            </section>
+          </div>
         ) : (
           <section className="auth-surface" aria-label="Autenticacion">
             <div className="mode-tabs">
@@ -296,19 +483,117 @@ function AuthForm({
   );
 }
 
+function AdminForm({
+  busy,
+  children,
+  onSubmit,
+  submitLabel,
+}: {
+  busy: boolean;
+  children: React.ReactNode;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  submitLabel: string;
+}) {
+  return (
+    <form className="auth-form compact" onSubmit={onSubmit}>
+      {children}
+      <button disabled={busy} type="submit">
+        {busy ? "Procesando" : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function Panel({
+  children,
+  title,
+}: {
+  children: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <section className="panel">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 function Field({
+  defaultValue,
   label,
   name,
+  required = true,
   type = "text",
 }: {
+  defaultValue?: string;
   label: string;
   name: string;
+  required?: boolean;
   type?: string;
 }) {
   return (
     <label>
       <span>{label}</span>
-      <input name={name} required type={type} />
+      <input
+        defaultValue={defaultValue}
+        name={name}
+        required={required}
+        type={type}
+      />
+    </label>
+  );
+}
+
+function BuildingSelect({
+  buildings,
+  selectedBuildingId,
+  setSelectedBuildingId,
+}: {
+  buildings: Building[];
+  selectedBuildingId: string;
+  setSelectedBuildingId: (buildingId: string) => void;
+}) {
+  return (
+    <label>
+      <span>Edificio</span>
+      <select
+        name="buildingId"
+        required
+        value={selectedBuildingId}
+        onChange={(event) => setSelectedBuildingId(event.target.value)}
+      >
+        <option value="">Seleccionar</option>
+        {buildings.map((building) => (
+          <option key={building.id} value={building.id}>
+            {building.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function UnitSelect({
+  buildingId,
+  units,
+}: {
+  buildingId: string;
+  units: Unit[];
+}) {
+  return (
+    <label>
+      <span>Unidad</span>
+      <select name="unitId">
+        <option value="">Sin unidad</option>
+        {units
+          .filter((unit) => unit.buildingId === buildingId)
+          .map((unit) => (
+            <option key={unit.id} value={unit.id}>
+              {unit.label}
+            </option>
+          ))}
+      </select>
     </label>
   );
 }
@@ -328,6 +613,27 @@ async function loadCurrentUser(
   }
 }
 
+async function loadBuildings(
+  organizationId: string,
+  setBuildings: (buildings: Building[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ buildings: Building[] }>(
+      `/organizations/${organizationId}/buildings`,
+      accessToken,
+    );
+    setBuildings(response.buildings);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
 async function apiGet<T>(path: string, accessToken: string): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: { authorization: `Bearer ${accessToken}` },
@@ -343,6 +649,27 @@ async function apiPost<T = { ok: true }>(
   const response = await fetch(`${apiBaseUrl}${path}`, {
     body: JSON.stringify(payload),
     headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
+  return parseApiResponse<T>(response);
+}
+
+async function apiPostWithAuth<T = { ok: true }>(
+  path: string,
+  payload: unknown,
+): Promise<T> {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    throw new Error("UNAUTHENTICATED");
+  }
+
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
     method: "POST",
   });
 

@@ -16,7 +16,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -111,7 +112,8 @@ h1 {
 }
 
 article,
-.auth-surface {
+.auth-surface,
+.panel {
   background: #ffffff;
   border: 1px solid #d9dfdb;
   border-radius: 8px;
@@ -145,6 +147,27 @@ article p {
 .auth-surface {
   max-width: 560px;
   padding: 18px;
+}
+
+.admin-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.ops-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.panel {
+  padding: 18px;
+}
+
+.panel h2 {
+  font-size: 18px;
+  letter-spacing: 0;
+  margin: 0 0 14px;
 }
 
 .mode-tabs {
@@ -185,7 +208,9 @@ article p {
   font-weight: 700;
 }
 
-.auth-form input {
+.auth-form input,
+.auth-form select {
+  background: #ffffff;
   border: 1px solid #c7d0ca;
   border-radius: 8px;
   min-height: 42px;
@@ -204,6 +229,16 @@ article p {
 .auth-form button:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+.auth-form.compact {
+  gap: 10px;
+}
+
+.split-fields {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .form-status {
@@ -225,7 +260,9 @@ article p {
   }
 
   .status-grid,
-  .mode-tabs {
+  .mode-tabs,
+  .ops-grid,
+  .split-fields {
     grid-template-columns: 1fr;
   }
 

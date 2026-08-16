@@ -74,4 +74,4 @@
 - [ ] Pisos y cocheras completos.
 - [ ] Invitacion real por email para residentes.
 - [ ] Importacion validada de residentes.
-- [ ] Panel web de administracion de edificios.
+- [x] Panel web inicial de administracion de edificios, unidades y residentes.
