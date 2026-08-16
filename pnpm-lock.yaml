@@ -53,6 +53,9 @@ importers:
       '@gzaccess/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@gzaccess/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       fastify:
         specifier: ^5.1.0
         version: 5.12.0

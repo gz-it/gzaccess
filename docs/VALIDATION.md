@@ -39,4 +39,22 @@ Alcance validado:
 
 Limitaciones:
 
-- La persistencia de las rutas auth todavia usa store en memoria para desarrollo/test. El esquema Prisma ya quedo preparado; falta conectar repositorio PostgreSQL.
+- La API usa `PrismaAuthStore` por defecto y `InMemoryAuthStore` solamente en tests. Las migraciones contra una base PostgreSQL real siguen pendientes de ejecutarse porque Docker/PostgreSQL no se levanto en esta corrida.
+
+## 2026-08-16 - Fase 1 persistencia Prisma
+
+Comandos ejecutados:
+
+- `pnpm install --no-frozen-lockfile --config.strict-ssl=false`: paso.
+- `pnpm format`: paso.
+- `pnpm lint`: paso.
+- `pnpm typecheck`: paso.
+- `pnpm test`: paso, 3 archivos y 9 tests.
+- `pnpm build`: paso.
+
+Alcance validado:
+
+- `PrismaAuthStore` implementado como store por defecto fuera de tests.
+- Refresh tokens persistidos como hashes en `Session.refreshTokenHash`.
+- Access tokens firmados con HMAC y verificables sin persistencia en memoria.
+- `InMemoryAuthStore` reservado para pruebas rapidas y deterministicas.

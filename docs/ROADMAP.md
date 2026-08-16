@@ -54,7 +54,7 @@
 - [x] Activacion de cuenta con token de un solo uso.
 - [x] Login, refresh y `/api/v1/auth/me`.
 - [x] RBAC compartido con pruebas unitarias.
-- [ ] Persistencia real de auth con Prisma/PostgreSQL.
+- [x] Persistencia real de auth con Prisma/PostgreSQL.
 - [ ] Recuperacion de password.
 - [ ] MFA configurable para roles administrativos.
 - [ ] Auditoria de login, activacion y sesiones.

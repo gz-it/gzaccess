@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
@@ -8,6 +9,7 @@ import {
   verifyPassword,
 } from "@gzaccess/auth";
 import type { AuthenticatedUser, AuthTokens, Role } from "@gzaccess/contracts";
+import { prisma, type PrismaClient } from "@gzaccess/database";
 
 const accessTokenTtlSeconds = 15 * 60;
 const refreshTokenTtlSeconds = 30 * 24 * 60 * 60;
@@ -46,6 +48,16 @@ interface StoredSession {
   revokedAt?: Date;
 }
 
+interface UserWithMemberships {
+  id: string;
+  email: string;
+  displayName: string;
+  isActive: boolean;
+  memberships: Array<{ organizationId: string; role: Role }>;
+}
+
+type AuthReadClient = Pick<PrismaClient, "user">;
+
 export interface AuthStore {
   createBootstrapAdmin(input: {
     organizationName: string;
@@ -70,10 +82,6 @@ export class InMemoryAuthStore implements AuthStore {
   private readonly memberships: StoredMembership[] = [];
   private readonly activations = new Map<string, StoredActivation>();
   private readonly sessions = new Map<string, StoredSession>();
-  private readonly accessTokens = new Map<
-    string,
-    { userId: string; expiresAt: Date }
-  >();
 
   async createBootstrapAdmin(input: {
     organizationName: string;
@@ -185,23 +193,19 @@ export class InMemoryAuthStore implements AuthStore {
   async authenticate(
     accessToken: string,
   ): Promise<AuthenticatedUser | undefined> {
-    const access = this.accessTokens.get(hashOpaqueToken(accessToken));
-    if (!access || access.expiresAt.getTime() <= Date.now()) {
+    const payload = verifyAccessToken(accessToken);
+    if (!payload) {
       return undefined;
     }
 
-    return this.toAuthenticatedUser(this.getUser(access.userId));
+    const user = this.getUser(payload.userId);
+    return user.isActive ? this.toAuthenticatedUser(user) : undefined;
   }
 
   private createTokens(userId: string): AuthTokens {
-    const accessToken = createOpaqueToken();
     const refreshToken = createOpaqueToken();
     const now = new Date();
 
-    this.accessTokens.set(hashOpaqueToken(accessToken), {
-      userId,
-      expiresAt: addSeconds(now, accessTokenTtlSeconds),
-    });
     this.sessions.set(hashOpaqueToken(refreshToken), {
       userId,
       refreshTokenHash: hashOpaqueToken(refreshToken),
@@ -209,7 +213,7 @@ export class InMemoryAuthStore implements AuthStore {
     });
 
     return {
-      accessToken,
+      accessToken: createAccessToken(userId),
       refreshToken,
       expiresInSeconds: accessTokenTtlSeconds,
     };
@@ -236,6 +240,192 @@ export class InMemoryAuthStore implements AuthStore {
       roles: memberships.map((item) => item.role),
       organizationIds: memberships.map((item) => item.organizationId),
     };
+  }
+}
+
+export class PrismaAuthStore implements AuthStore {
+  constructor(private readonly client: PrismaClient = prisma) {}
+
+  async createBootstrapAdmin(input: {
+    organizationName: string;
+    email: string;
+    displayName: string;
+  }): Promise<{ user: AuthenticatedUser; activationToken: string }> {
+    const normalizedEmail = normalizeEmail(input.email);
+    const existing = await this.client.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new AuthError("EMAIL_ALREADY_EXISTS", 409);
+    }
+
+    const activationToken = createOpaqueToken();
+    const tokenHash = hashOpaqueToken(activationToken);
+    const result = await this.client.$transaction(async (transaction) => {
+      const organization = await transaction.organization.create({
+        data: { name: input.organizationName },
+      });
+      const user = await transaction.user.create({
+        data: {
+          organizationId: organization.id,
+          email: normalizedEmail,
+          displayName: input.displayName,
+          isActive: false,
+        },
+      });
+      await transaction.organizationMembership.create({
+        data: {
+          organizationId: organization.id,
+          userId: user.id,
+          role: "GZIT_PLATFORM_ADMIN",
+        },
+      });
+      await transaction.activationToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: addSeconds(new Date(), activationTokenTtlSeconds),
+        },
+      });
+
+      return this.findUserForAuth(user.id, transaction);
+    });
+
+    return { user: toAuthenticatedUser(result), activationToken };
+  }
+
+  async completeActivation(input: {
+    token: string;
+    password: string;
+  }): Promise<{ user: AuthenticatedUser; tokens: AuthTokens }> {
+    const tokenHash = hashOpaqueToken(input.token);
+    const result = await this.client.$transaction(async (transaction) => {
+      const activation = await transaction.activationToken.findUnique({
+        where: { tokenHash },
+      });
+      if (
+        !activation ||
+        activation.consumedAt ||
+        activation.expiresAt.getTime() <= Date.now()
+      ) {
+        throw new AuthError("INVALID_OR_EXPIRED_ACTIVATION", 400);
+      }
+
+      await transaction.user.update({
+        where: { id: activation.userId },
+        data: {
+          passwordHash: await hashPassword(input.password),
+          isActive: true,
+        },
+      });
+      await transaction.activationToken.update({
+        where: { id: activation.id },
+        data: { consumedAt: new Date() },
+      });
+
+      return this.findUserForAuth(activation.userId, transaction);
+    });
+
+    return {
+      user: toAuthenticatedUser(result),
+      tokens: await this.createTokens(result.id),
+    };
+  }
+
+  async login(input: {
+    email: string;
+    password: string;
+  }): Promise<{ user: AuthenticatedUser; tokens: AuthTokens }> {
+    const user = await this.client.user.findUnique({
+      where: { email: normalizeEmail(input.email) },
+      include: { memberships: true },
+    });
+    if (!user || !user.isActive || !user.passwordHash) {
+      throw new AuthError("INVALID_CREDENTIALS", 401);
+    }
+
+    const validPassword = await verifyPassword(
+      input.password,
+      user.passwordHash,
+    );
+    if (!validPassword) {
+      throw new AuthError("INVALID_CREDENTIALS", 401);
+    }
+
+    return {
+      user: toAuthenticatedUser(user),
+      tokens: await this.createTokens(user.id),
+    };
+  }
+
+  async refresh(input: { refreshToken: string }): Promise<AuthTokens> {
+    const refreshTokenHash = hashOpaqueToken(input.refreshToken);
+    const session = await this.client.session.findUnique({
+      where: { refreshTokenHash },
+    });
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt.getTime() <= Date.now()
+    ) {
+      throw new AuthError("INVALID_REFRESH_TOKEN", 401);
+    }
+
+    await this.client.session.update({
+      where: { id: session.id },
+      data: { revokedAt: new Date() },
+    });
+
+    return this.createTokens(session.userId);
+  }
+
+  async authenticate(
+    accessToken: string,
+  ): Promise<AuthenticatedUser | undefined> {
+    const payload = verifyAccessToken(accessToken);
+    if (!payload) {
+      return undefined;
+    }
+
+    const user = await this.client.user.findUnique({
+      where: { id: payload.userId },
+      include: { memberships: true },
+    });
+
+    return user?.isActive ? toAuthenticatedUser(user) : undefined;
+  }
+
+  private async createTokens(userId: string): Promise<AuthTokens> {
+    const refreshToken = createOpaqueToken();
+    await this.client.session.create({
+      data: {
+        userId,
+        refreshTokenHash: hashOpaqueToken(refreshToken),
+        expiresAt: addSeconds(new Date(), refreshTokenTtlSeconds),
+      },
+    });
+
+    return {
+      accessToken: createAccessToken(userId),
+      refreshToken,
+      expiresInSeconds: accessTokenTtlSeconds,
+    };
+  }
+
+  private async findUserForAuth(
+    userId: string,
+    client: AuthReadClient = this.client,
+  ): Promise<UserWithMemberships> {
+    const user = await client.user.findUnique({
+      where: { id: userId },
+      include: { memberships: true },
+    });
+    if (!user) {
+      throw new AuthError("USER_NOT_FOUND", 404);
+    }
+
+    return user;
   }
 }
 
@@ -340,4 +530,71 @@ function normalizeEmail(email: string): string {
 
 function createId(prefix: string): string {
   return `${prefix}_${createOpaqueToken(12)}`;
+}
+
+function toAuthenticatedUser(user: UserWithMemberships): AuthenticatedUser {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    roles: user.memberships.map((item) => item.role),
+    organizationIds: user.memberships.map((item) => item.organizationId),
+  };
+}
+
+interface AccessTokenPayload {
+  userId: string;
+  expiresAt: number;
+}
+
+function createAccessToken(userId: string): string {
+  const payload: AccessTokenPayload = {
+    userId,
+    expiresAt: Math.floor(Date.now() / 1000) + accessTokenTtlSeconds,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
+    "base64url",
+  );
+
+  return `${encodedPayload}.${signAccessPayload(encodedPayload)}`;
+}
+
+function verifyAccessToken(token: string): AccessTokenPayload | undefined {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) {
+    return undefined;
+  }
+
+  const expectedSignature = signAccessPayload(encodedPayload);
+  const actual = Buffer.from(signature, "base64url");
+  const expected = Buffer.from(expectedSignature, "base64url");
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    return undefined;
+  }
+
+  const payload = JSON.parse(
+    Buffer.from(encodedPayload, "base64url").toString("utf8"),
+  ) as AccessTokenPayload;
+
+  return payload.expiresAt > Math.floor(Date.now() / 1000)
+    ? payload
+    : undefined;
+}
+
+function signAccessPayload(encodedPayload: string): string {
+  return createHmac("sha256", getAccessTokenSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+}
+
+function getAccessTokenSecret(): string {
+  if (process.env.JWT_ACCESS_SECRET) {
+    return process.env.JWT_ACCESS_SECRET;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new AuthError("ACCESS_TOKEN_SECRET_REQUIRED", 500);
+  }
+
+  return "gzaccess-dev-access-token-secret";
 }

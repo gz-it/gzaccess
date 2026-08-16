@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import type { HealthResponse } from "@gzaccess/contracts";
 import {
   InMemoryAuthStore,
+  PrismaAuthStore,
   registerAuthRoutes,
   type AuthStore,
 } from "./auth.js";
@@ -24,7 +25,7 @@ export function buildApp(options?: { authStore?: AuthStore }) {
 
   void app.register(cors, { origin: true });
   void app.register(helmet);
-  void registerAuthRoutes(app, options?.authStore ?? new InMemoryAuthStore());
+  void registerAuthRoutes(app, options?.authStore ?? createDefaultAuthStore());
 
   app.get<{ Reply: HealthResponse }>("/api/v1/health", async () => ({
     service: "gzaccess-api",
@@ -34,4 +35,10 @@ export function buildApp(options?: { authStore?: AuthStore }) {
   }));
 
   return app;
+}
+
+function createDefaultAuthStore(): AuthStore {
+  return process.env.NODE_ENV === "test"
+    ? new InMemoryAuthStore()
+    : new PrismaAuthStore();
 }
