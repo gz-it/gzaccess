@@ -168,5 +168,28 @@ Alcance validado:
 
 Limitaciones:
 
-- Las unidades creadas se mantienen en estado local de la sesion web porque todavia no existe endpoint de listado de unidades.
+- En esta validacion inicial las unidades creadas se mantenian en estado local de la sesion web. Esto fue completado luego en la validacion de listados operativos.
+- La invitacion real por email sigue pendiente hasta configurar proveedor de correo.
+
+## 2026-08-16 - Fase 2 listados operativos
+
+Comandos ejecutados:
+
+- `pnpm format --config.strict-ssl=false`: paso.
+- `pnpm lint --config.strict-ssl=false`: paso.
+- `pnpm typecheck --config.strict-ssl=false`: paso.
+- `pnpm test --config.strict-ssl=false`: paso, 3 archivos y 17 tests.
+- `pnpm build --config.strict-ssl=false`: paso.
+
+Alcance validado:
+
+- API protegida para listar unidades por edificio.
+- API protegida para listar residentes por edificio.
+- Bloqueo de acceso cruzado para listados de unidades y residentes.
+- Panel web recarga unidades y residentes al seleccionar edificio.
+- Panel web actualiza la poblacion luego de registrar residente.
+
+Limitaciones:
+
+- Los listados usan stores en memoria en pruebas. La ejecucion contra PostgreSQL real queda pendiente hasta tener Docker/VPS.
 - La invitacion real por email sigue pendiente hasta configurar proveedor de correo.

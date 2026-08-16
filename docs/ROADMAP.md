@@ -69,9 +69,12 @@
 - [x] API protegida para crear edificios.
 - [x] API protegida para listar edificios por organizacion.
 - [x] API protegida para crear unidades.
+- [x] API protegida para listar unidades por edificio.
 - [x] API protegida para registrar residentes individualmente.
+- [x] API protegida para listar residentes por edificio.
 - [x] Bloqueo probado contra acceso cruzado entre organizaciones.
 - [ ] Pisos y cocheras completos.
 - [ ] Invitacion real por email para residentes.
 - [ ] Importacion validada de residentes.
 - [x] Panel web inicial de administracion de edificios, unidades y residentes.
+- [x] Panel web con recarga real de unidades y poblacion por edificio.

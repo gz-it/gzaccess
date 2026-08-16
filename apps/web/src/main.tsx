@@ -32,6 +32,18 @@ interface Unit {
   label: string;
 }
 
+interface Resident {
+  personId: string;
+  buildingId: string;
+  unitId?: string | null;
+  unitLabel?: string | null;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  documentNumber?: string | null;
+}
+
 const apiBaseUrl = "/api/v1";
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
@@ -41,6 +53,7 @@ function App() {
   const [user, setUser] = useState<User | undefined>();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [residents, setResidents] = useState<Resident[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -57,11 +70,30 @@ function App() {
   useEffect(() => {
     if (!user?.organizationIds[0]) {
       setBuildings([]);
+      setUnits([]);
+      setResidents([]);
+      setSelectedBuildingId("");
       return;
     }
 
-    void loadBuildings(user.organizationIds[0], setBuildings, setStatus);
+    void loadBuildings(
+      user.organizationIds[0],
+      setBuildings,
+      setSelectedBuildingId,
+      setStatus,
+    );
   }, [user]);
+
+  useEffect(() => {
+    if (!selectedBuildingId) {
+      setUnits([]);
+      setResidents([]);
+      return;
+    }
+
+    void loadUnits(selectedBuildingId, setUnits, setStatus);
+    void loadResidents(selectedBuildingId, setResidents, setStatus);
+  }, [selectedBuildingId]);
 
   const navLabel = useMemo(() => {
     if (!user) {
@@ -168,6 +200,7 @@ function App() {
     setUser(undefined);
     setBuildings([]);
     setUnits([]);
+    setResidents([]);
     setSelectedBuildingId("");
     setStatus("");
   }
@@ -193,6 +226,7 @@ function App() {
         },
       );
       setBuildings((current) => [...current, response.building]);
+      setUnits([]);
       setSelectedBuildingId(response.building.id);
       setStatus("Edificio creado");
       event.currentTarget.reset();
@@ -220,7 +254,11 @@ function App() {
         buildingId,
         label: String(form.get("label")),
       });
-      setUnits((current) => [...current, response.unit]);
+      setUnits((current) =>
+        current.some((unit) => unit.id === response.unit.id)
+          ? current
+          : [...current, response.unit],
+      );
       setStatus("Unidad creada");
       event.currentTarget.reset();
     } catch (error) {
@@ -255,6 +293,7 @@ function App() {
         email: String(form.get("email") || "") || undefined,
         phone: String(form.get("phone") || "") || undefined,
       });
+      await loadResidents(buildingId, setResidents, setStatus);
       setStatus(response.activationToken ?? `Residente ${response.personId}`);
       event.currentTarget.reset();
     } catch (error) {
@@ -373,6 +412,10 @@ function App() {
                   />
                   <Field label="Telefono" name="phone" required={false} />
                 </AdminForm>
+              </Panel>
+
+              <Panel title="Poblacion">
+                <ResidentList residents={residents} />
               </Panel>
             </section>
           </div>
@@ -598,6 +641,28 @@ function UnitSelect({
   );
 }
 
+function ResidentList({ residents }: { residents: Resident[] }) {
+  if (residents.length === 0) {
+    return <p className="empty-state">Sin residentes cargados</p>;
+  }
+
+  return (
+    <div className="resident-list">
+      {residents.map((resident) => (
+        <article className="resident-row" key={resident.personId}>
+          <div>
+            <strong>
+              {resident.lastName}, {resident.firstName}
+            </strong>
+            <span>{resident.unitLabel ?? "Sin unidad"}</span>
+          </div>
+          <p>{resident.email ?? resident.phone ?? resident.documentNumber}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 async function loadCurrentUser(
   accessToken: string,
   setUser: (user: User | undefined) => void,
@@ -616,6 +681,7 @@ async function loadCurrentUser(
 async function loadBuildings(
   organizationId: string,
   setBuildings: (buildings: Building[]) => void,
+  setSelectedBuildingId: (buildingId: string) => void,
   setStatus: (status: string) => void,
 ) {
   const accessToken = localStorage.getItem(accessTokenKey);
@@ -629,6 +695,49 @@ async function loadBuildings(
       accessToken,
     );
     setBuildings(response.buildings);
+    setSelectedBuildingId(response.buildings[0]?.id ?? "");
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadUnits(
+  buildingId: string,
+  setUnits: (units: Unit[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ units: Unit[] }>(
+      `/buildings/${buildingId}/units`,
+      accessToken,
+    );
+    setUnits(response.units);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadResidents(
+  buildingId: string,
+  setResidents: (residents: Resident[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ residents: Resident[] }>(
+      `/buildings/${buildingId}/residents`,
+      accessToken,
+    );
+    setResidents(response.residents);
   } catch (error) {
     setStatus(getErrorMessage(error));
   }

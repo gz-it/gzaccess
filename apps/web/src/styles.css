@@ -157,7 +157,7 @@ article p {
 .ops-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .panel {
@@ -239,6 +239,31 @@ article p {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.empty-state {
+  color: #6b7280;
+  margin: 0;
+}
+
+.resident-list {
+  display: grid;
+  gap: 10px;
+}
+
+.resident-row {
+  border-color: #e5ebe7;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.resident-row strong {
+  font-size: 15px;
+}
+
+.resident-row span {
+  margin-top: 4px;
 }
 
 .form-status {

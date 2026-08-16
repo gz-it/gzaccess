@@ -31,6 +31,18 @@ export interface ResidentInvite {
   activationToken?: string;
 }
 
+export interface ResidentSummary {
+  personId: string;
+  buildingId: string;
+  unitId?: string | null;
+  unitLabel?: string | null;
+  firstName: string;
+  lastName: string;
+  email?: string | null;
+  phone?: string | null;
+  documentNumber?: string | null;
+}
+
 export interface BuildingStore {
   createBuilding(
     user: AuthenticatedUser,
@@ -42,6 +54,10 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     organizationId: string,
   ): Promise<{ buildings: BuildingSummary[] }>;
+  listUnits(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ units: UnitSummary[] }>;
   createUnit(
     user: AuthenticatedUser,
     input: CreateUnitInput,
@@ -50,6 +66,10 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     input: RegisterResidentInput,
   ): Promise<ResidentInvite>;
+  listResidents(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ residents: ResidentSummary[] }>;
 }
 
 type CreateBuildingInput = z.infer<typeof createBuildingSchema>;
@@ -119,6 +139,17 @@ export class InMemoryBuildingStore implements BuildingStore {
     return { unit };
   }
 
+  async listUnits(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      units: [...this.units.values()].filter(
+        (unit) => unit.buildingId === buildingId,
+      ),
+    };
+  }
+
   async registerResident(
     user: AuthenticatedUser,
     input: RegisterResidentInput,
@@ -158,6 +189,31 @@ export class InMemoryBuildingStore implements BuildingStore {
     });
 
     return { personId, userId, activationToken };
+  }
+
+  async listResidents(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    const residents = [...this.persons.values()]
+      .filter((person) => person.buildingId === buildingId)
+      .map((person) => {
+        const unit = person.unitId ? this.units.get(person.unitId) : undefined;
+        return {
+          personId: person.id,
+          buildingId,
+          unitId: person.unitId,
+          unitLabel: unit?.label,
+          firstName: person.firstName,
+          lastName: person.lastName,
+          email: person.email,
+          phone: person.phone,
+          documentNumber: person.documentNumber,
+        };
+      })
+      .sort(compareResidents);
+
+    return { residents };
   }
 
   private getBuilding(buildingId: string): BuildingSummary {
@@ -216,6 +272,23 @@ export class PrismaBuildingStore implements BuildingStore {
     });
 
     return { unit };
+  }
+
+  async listUnits(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const units = await this.client.unit.findMany({
+      where: { buildingId },
+      orderBy: { label: "asc" },
+    });
+
+    return { units };
   }
 
   async registerResident(
@@ -303,6 +376,44 @@ export class PrismaBuildingStore implements BuildingStore {
 
     return result;
   }
+
+  async listResidents(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const memberships = await this.client.buildingMembership.findMany({
+      include: {
+        person: true,
+        unit: true,
+      },
+      where: {
+        buildingId,
+        isActive: true,
+        role: "RESIDENT",
+      },
+    });
+
+    const residents = memberships
+      .map((membership) => ({
+        personId: membership.person.id,
+        buildingId,
+        unitId: membership.unitId,
+        unitLabel: membership.unit?.label,
+        firstName: membership.person.firstName,
+        lastName: membership.person.lastName,
+        email: membership.person.email,
+        phone: membership.person.phone,
+        documentNumber: membership.person.documentNumber,
+      }))
+      .sort(compareResidents);
+
+    return { residents };
+  }
 }
 
 export class BuildingError extends Error {
@@ -365,10 +476,26 @@ export async function registerBuildingRoutes(
     return buildingStore.createUnit(user, input);
   });
 
+  app.get("/api/v1/buildings/:buildingId/units", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listUnits(user, params.buildingId);
+  });
+
   app.post("/api/v1/residents", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const input = registerResidentSchema.parse(request.body);
     return buildingStore.registerResident(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/residents", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listResidents(user, params.buildingId);
   });
 }
 
@@ -386,4 +513,12 @@ async function requireAuthenticated(
 
 function createId(prefix: string): string {
   return `${prefix}_${createOpaqueToken(12)}`;
+}
+
+function compareResidents(left: ResidentSummary, right: ResidentSummary) {
+  return (
+    left.lastName.localeCompare(right.lastName) ||
+    left.firstName.localeCompare(right.firstName) ||
+    left.personId.localeCompare(right.personId)
+  );
 }
