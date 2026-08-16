@@ -178,3 +178,133 @@ describe("auth flow", () => {
     expect(newLogin.statusCode).toBe(200);
   });
 });
+
+describe("building administration", () => {
+  it("creates buildings, units, and resident invitations inside one organization", async () => {
+    const app = buildApp();
+    const { accessToken, organizationId } = await createActivatedAdmin(
+      app,
+      "buildings@gzit.test",
+    );
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(accessToken),
+      payload: {
+        organizationId,
+        name: "Torre Norte",
+        address: "Av. Siempre Viva 123",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    expect(building.statusCode).toBe(200);
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/v1/organizations/${organizationId}/buildings`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toMatchObject({
+      buildings: [{ id: buildingId, name: "Torre Norte" }],
+    });
+
+    const unit = await app.inject({
+      method: "POST",
+      url: "/api/v1/units",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        label: "4A",
+      },
+    });
+    expect(unit.statusCode).toBe(200);
+    const unitId = unit.json<{ unit: { id: string } }>().unit.id;
+
+    const resident = await app.inject({
+      method: "POST",
+      url: "/api/v1/residents",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        unitId,
+        firstName: "Ada",
+        lastName: "Lovelace",
+        documentNumber: "12345678",
+        email: "ada@example.test",
+      },
+    });
+
+    expect(resident.statusCode).toBe(200);
+    expect(resident.json()).toMatchObject({
+      personId: expect.any(String),
+      userId: expect.any(String),
+      activationToken: expect.any(String),
+    });
+  });
+
+  it("blocks cross-organization building access", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "admin-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "admin-b@gzit.test");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminB.organizationId,
+        name: "Torre Ajena",
+        address: "Otra calle 456",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+});
+
+async function createActivatedAdmin(
+  app: ReturnType<typeof buildApp>,
+  email: string,
+) {
+  const bootstrap = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/dev/bootstrap-platform-admin",
+    payload: {
+      organizationName: `Org ${email}`,
+      email,
+      displayName: email,
+    },
+  });
+  const bootstrapBody = bootstrap.json<{
+    activationToken: string;
+    user: { organizationIds: string[] };
+  }>();
+  const activation = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/activation/complete",
+    payload: {
+      token: bootstrapBody.activationToken,
+      password: "Password!123",
+    },
+  });
+  const activationBody = activation.json<{
+    tokens: { accessToken: string };
+  }>();
+
+  return {
+    accessToken: activationBody.tokens.accessToken,
+    organizationId: bootstrapBody.user.organizationIds[0],
+  };
+}
+
+function authHeaders(accessToken: string) {
+  return {
+    authorization: `Bearer ${accessToken}`,
+  };
+}

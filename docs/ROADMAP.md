@@ -13,7 +13,7 @@
 | ------------------------------------ | --------- | ---------------------------------------------------------- |
 | 0 - Especificacion y base ejecutable | validada  | Proyecto completo ejecutable en desarrollo.                |
 | 1 - Identidad, organizaciones y RBAC | en curso  | Cuentas reales y seguras para cada rol.                    |
-| 2 - Edificio y residentes            | pendiente | Un edificio administra su poblacion completa.              |
+| 2 - Edificio y residentes            | en curso  | Un edificio administra su poblacion completa.              |
 | 3 - App, rostros y vehiculos         | pendiente | Residentes autogestionan rostro y vehiculos.               |
 | 4 - Permisos y simulador             | pendiente | Recorrido completo validado sin hardware.                  |
 | 5 - GzAccess Edge                    | pendiente | Nube y red local se comunican de forma segura.             |
@@ -63,3 +63,15 @@
 - [x] Auditoria inicial de bootstrap, activacion, login y reset.
 - [x] UI web para login, activacion y recuperacion.
 - [ ] UI mobile para login/activacion.
+
+## Fase 2 checklist
+
+- [x] API protegida para crear edificios.
+- [x] API protegida para listar edificios por organizacion.
+- [x] API protegida para crear unidades.
+- [x] API protegida para registrar residentes individualmente.
+- [x] Bloqueo probado contra acceso cruzado entre organizaciones.
+- [ ] Pisos y cocheras completos.
+- [ ] Invitacion real por email para residentes.
+- [ ] Importacion validada de residentes.
+- [ ] Panel web de administracion de edificios.

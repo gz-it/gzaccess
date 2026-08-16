@@ -126,3 +126,25 @@ Resultado:
 Limitacion:
 
 - Docker no esta disponible en esta maquina, por lo que `docker compose up` y `prisma migrate deploy` contra PostgreSQL local quedan pendientes.
+
+## 2026-08-16 - Fase 2 API inicial de edificios y residentes
+
+Comandos ejecutados:
+
+- `pnpm format`: paso.
+- `pnpm lint`: paso.
+- `pnpm typecheck`: paso.
+- `pnpm test`: paso, 3 archivos y 15 tests.
+- `pnpm build`: paso.
+
+Alcance validado:
+
+- Creacion de edificio protegida por token.
+- Listado de edificios filtrado por organizacion.
+- Creacion de unidad dentro de edificio.
+- Alta individual de residente con invitacion de activacion.
+- Bloqueo de acceso cruzado entre organizaciones.
+
+Limitaciones:
+
+- Las pruebas usan stores en memoria. El store Prisma esta implementado, pero falta aplicar migraciones contra PostgreSQL real cuando haya VPS/Docker.

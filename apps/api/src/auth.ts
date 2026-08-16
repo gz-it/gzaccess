@@ -758,29 +758,16 @@ export async function registerAuthRoutes(
   });
 
   app.get("/api/v1/auth/me", async (request, reply) => {
-    const user = await authenticateRequest(store, request);
+    const user = await getAuthenticatedUser(store, request);
     if (!user) {
       return reply.code(401).send({ error: "UNAUTHENTICATED" });
     }
 
     return { user };
   });
-
-  app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof AuthError) {
-      return reply.code(error.statusCode).send({ error: error.code });
-    }
-
-    if (error instanceof z.ZodError) {
-      return reply.code(400).send({ error: "VALIDATION_ERROR" });
-    }
-
-    app.log.error(error);
-    return reply.code(500).send({ error: "INTERNAL_ERROR" });
-  });
 }
 
-async function authenticateRequest(
+export async function getAuthenticatedUser(
   store: AuthStore,
   request: FastifyRequest,
 ): Promise<AuthenticatedUser | undefined> {
