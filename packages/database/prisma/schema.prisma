@@ -1,0 +1,361 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  GZIT_PLATFORM_ADMIN
+  GZIT_TECHNICIAN
+  ORGANIZATION_ADMIN
+  BUILDING_ADMIN
+  SECURITY_OPERATOR
+  RESIDENT
+  AUDITOR
+}
+
+enum CredentialKind {
+  FACE
+  LICENSE_PLATE
+  CARD
+  PIN
+  QR
+}
+
+enum CredentialState {
+  PENDING
+  SYNCING
+  ACTIVE
+  PARTIAL
+  ERROR
+  REVOKED
+}
+
+enum SyncJobState {
+  QUEUED
+  SENT_TO_EDGE
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  RETRYING
+  FAILED
+  CANCELLED
+  SUPERSEDED
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  memberships OrganizationMembership[]
+  buildings   Building[]
+  users       User[]
+
+  @@index([name])
+}
+
+model User {
+  id             String   @id @default(uuid())
+  organizationId String?
+  email          String   @unique
+  passwordHash   String?
+  displayName    String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  memberships    OrganizationMembership[]
+  sessions       Session[]
+  persons        Person[]
+
+  @@index([organizationId])
+}
+
+model OrganizationMembership {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           Role
+  createdAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User @relation(fields: [userId], references: [id])
+
+  @@unique([organizationId, userId, role])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  refreshToken String   @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Building {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  address        String
+  timezone       String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  floors         Floor[]
+  units          Unit[]
+  zones          Zone[]
+  accessPoints   AccessPoint[]
+  memberships    BuildingMembership[]
+  edgeInstallations EdgeInstallation[]
+  devices        Device[]
+  syncJobs       SyncJob[]
+  accessEvents   AccessEvent[]
+
+  @@index([organizationId])
+  @@unique([organizationId, name])
+}
+
+model Floor {
+  id             String @id @default(uuid())
+  organizationId String
+  buildingId     String
+  name           String
+  sortOrder      Int
+  building       Building @relation(fields: [buildingId], references: [id])
+
+  @@index([organizationId])
+  @@index([buildingId])
+}
+
+model Unit {
+  id             String @id @default(uuid())
+  organizationId String
+  buildingId     String
+  floorId        String?
+  label          String
+  building       Building @relation(fields: [buildingId], references: [id])
+  memberships    BuildingMembership[]
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@unique([buildingId, label])
+}
+
+model Zone {
+  id             String @id @default(uuid())
+  organizationId String
+  buildingId     String
+  name           String
+  building       Building @relation(fields: [buildingId], references: [id])
+  accessPoints   AccessPoint[]
+
+  @@index([organizationId])
+  @@index([buildingId])
+}
+
+model AccessPoint {
+  id             String @id @default(uuid())
+  organizationId String
+  buildingId     String
+  zoneId         String?
+  name           String
+  kind           String
+  building       Building @relation(fields: [buildingId], references: [id])
+  zone           Zone? @relation(fields: [zoneId], references: [id])
+
+  @@index([organizationId])
+  @@index([buildingId])
+}
+
+model Person {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  firstName      String
+  lastName       String
+  documentNumber String?
+  email          String?
+  phone          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User? @relation(fields: [userId], references: [id])
+  memberships    BuildingMembership[]
+  credentials    Credential[]
+  vehicles       Vehicle[]
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+model BuildingMembership {
+  id             String   @id @default(uuid())
+  organizationId String
+  buildingId     String
+  unitId         String?
+  personId       String
+  role           Role     @default(RESIDENT)
+  startsAt       DateTime @default(now())
+  endsAt         DateTime?
+  isActive       Boolean  @default(true)
+  building       Building @relation(fields: [buildingId], references: [id])
+  unit           Unit? @relation(fields: [unitId], references: [id])
+  person         Person @relation(fields: [personId], references: [id])
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([personId])
+}
+
+model Vehicle {
+  id                String   @id @default(uuid())
+  organizationId    String
+  buildingId        String
+  personId          String
+  plateOriginal     String
+  plateNormalized   String
+  country           String
+  brand             String?
+  model             String?
+  color             String?
+  type              String?
+  state             CredentialState @default(PENDING)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  person            Person @relation(fields: [personId], references: [id])
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([personId])
+  @@unique([buildingId, plateNormalized])
+}
+
+model Credential {
+  id             String   @id @default(uuid())
+  organizationId String
+  buildingId     String
+  personId       String
+  kind           CredentialKind
+  state          CredentialState @default(PENDING)
+  version        Int      @default(1)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  person         Person @relation(fields: [personId], references: [id])
+  syncJobs       SyncJob[]
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([personId])
+}
+
+model EdgeInstallation {
+  id             String   @id @default(uuid())
+  organizationId String
+  buildingId     String
+  name           String
+  publicKey      String?
+  lastSeenAt     DateTime?
+  createdAt      DateTime @default(now())
+  building       Building @relation(fields: [buildingId], references: [id])
+  devices        Device[]
+  syncJobs       SyncJob[]
+
+  @@index([organizationId])
+  @@index([buildingId])
+}
+
+model Device {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  buildingId         String
+  edgeInstallationId String?
+  brand              String
+  model              String
+  externalId         String?
+  capabilities       String[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  building           Building @relation(fields: [buildingId], references: [id])
+  edgeInstallation   EdgeInstallation? @relation(fields: [edgeInstallationId], references: [id])
+  syncJobs           SyncJob[]
+  accessEvents       AccessEvent[]
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@unique([buildingId, externalId])
+}
+
+model SyncJob {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  buildingId         String
+  edgeInstallationId String?
+  deviceId           String?
+  credentialId       String?
+  type               String
+  idempotencyKey     String
+  state              SyncJobState @default(QUEUED)
+  attempts           Int @default(0)
+  nextRetryAt        DateTime?
+  safeError          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  building           Building @relation(fields: [buildingId], references: [id])
+  edgeInstallation   EdgeInstallation? @relation(fields: [edgeInstallationId], references: [id])
+  device             Device? @relation(fields: [deviceId], references: [id])
+  credential         Credential? @relation(fields: [credentialId], references: [id])
+
+  @@unique([idempotencyKey])
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([state, nextRetryAt])
+}
+
+model AccessEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  buildingId     String
+  deviceId       String?
+  externalId     String?
+  occurredAt     DateTime
+  receivedAt     DateTime @default(now())
+  direction      String?
+  allowed        Boolean
+  reason         String
+  building       Building @relation(fields: [buildingId], references: [id])
+  device         Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@unique([deviceId, externalId])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?
+  buildingId     String?
+  actorUserId     String?
+  action         String
+  entityType     String
+  entityId       String
+  safeBefore     Json?
+  safeAfter      Json?
+  result         String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([entityType, entityId])
+}
+

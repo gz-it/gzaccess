@@ -1,0 +1,17 @@
+{
+  "name": "@gzaccess/edge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@gzaccess/device-simulator": "workspace:*",
+    "pino": "^9.6.0"
+  }
+}
