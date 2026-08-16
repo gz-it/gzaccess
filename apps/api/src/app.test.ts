@@ -212,12 +212,36 @@ describe("building administration", () => {
       buildings: [{ id: buildingId, name: "Torre Norte" }],
     });
 
+    const floor = await app.inject({
+      method: "POST",
+      url: "/api/v1/floors",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        name: "Piso 4",
+        sortOrder: 4,
+      },
+    });
+    expect(floor.statusCode).toBe(200);
+    const floorId = floor.json<{ floor: { id: string } }>().floor.id;
+
+    const listedFloors = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/floors`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listedFloors.statusCode).toBe(200);
+    expect(listedFloors.json()).toMatchObject({
+      floors: [{ id: floorId, name: "Piso 4", sortOrder: 4 }],
+    });
+
     const unit = await app.inject({
       method: "POST",
       url: "/api/v1/units",
       headers: authHeaders(accessToken),
       payload: {
         buildingId,
+        floorId,
         label: "4A",
       },
     });
@@ -231,7 +255,7 @@ describe("building administration", () => {
     });
     expect(listedUnits.statusCode).toBe(200);
     expect(listedUnits.json()).toMatchObject({
-      units: [{ id: unitId, label: "4A", buildingId }],
+      units: [{ id: unitId, label: "4A", buildingId, floorName: "Piso 4" }],
     });
 
     const resident = await app.inject({
@@ -318,6 +342,35 @@ describe("building administration", () => {
     const response = await app.inject({
       method: "GET",
       url: `/api/v1/buildings/${buildingId}/units`,
+      headers: authHeaders(adminB.accessToken),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+
+  it("blocks cross-organization floor listing", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "floors-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "floors-b@gzit.test");
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminA.organizationId,
+        name: "Torre Pisos",
+        address: "Calle Tres 300",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/floors`,
       headers: authHeaders(adminB.accessToken),
     });
 

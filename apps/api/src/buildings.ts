@@ -23,6 +23,15 @@ export interface UnitSummary {
   buildingId: string;
   label: string;
   floorId?: string | null;
+  floorName?: string | null;
+}
+
+export interface FloorSummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  name: string;
+  sortOrder: number;
 }
 
 export interface ResidentInvite {
@@ -58,6 +67,14 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ units: UnitSummary[] }>;
+  createFloor(
+    user: AuthenticatedUser,
+    input: CreateFloorInput,
+  ): Promise<{ floor: FloorSummary }>;
+  listFloors(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ floors: FloorSummary[] }>;
   createUnit(
     user: AuthenticatedUser,
     input: CreateUnitInput,
@@ -73,6 +90,7 @@ export interface BuildingStore {
 }
 
 type CreateBuildingInput = z.infer<typeof createBuildingSchema>;
+type CreateFloorInput = z.infer<typeof createFloorSchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 
@@ -96,6 +114,7 @@ interface StoredUser {
 
 export class InMemoryBuildingStore implements BuildingStore {
   private readonly buildings = new Map<string, BuildingSummary>();
+  private readonly floors = new Map<string, FloorSummary>();
   private readonly units = new Map<string, UnitSummary>();
   private readonly persons = new Map<string, StoredPerson>();
   private readonly users = new Map<string, StoredUser>();
@@ -127,16 +146,46 @@ export class InMemoryBuildingStore implements BuildingStore {
   async createUnit(user: AuthenticatedUser, input: CreateUnitInput) {
     const building = this.getBuilding(input.buildingId);
     requireOrganizationAccess(user, building.organizationId);
+    const floor = input.floorId
+      ? this.getFloor(input.floorId, building.id)
+      : undefined;
     const unit: UnitSummary = {
       id: createId("unt"),
       organizationId: building.organizationId,
       buildingId: building.id,
       label: input.label,
-      floorId: input.floorId,
+      floorId: floor?.id,
+      floorName: floor?.name,
     };
     this.units.set(unit.id, unit);
 
     return { unit };
+  }
+
+  async createFloor(user: AuthenticatedUser, input: CreateFloorInput) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const floor: FloorSummary = {
+      id: createId("flr"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      name: input.name,
+      sortOrder: input.sortOrder,
+    };
+    this.floors.set(floor.id, floor);
+
+    return { floor };
+  }
+
+  async listFloors(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      floors: [...this.floors.values()]
+        .filter((floor) => floor.buildingId === buildingId)
+        .sort(compareFloors),
+    };
   }
 
   async listUnits(user: AuthenticatedUser, buildingId: string) {
@@ -224,6 +273,15 @@ export class InMemoryBuildingStore implements BuildingStore {
 
     return building;
   }
+
+  private getFloor(floorId: string, buildingId: string): FloorSummary {
+    const floor = this.floors.get(floorId);
+    if (!floor || floor.buildingId !== buildingId) {
+      throw new BuildingError("FLOOR_NOT_FOUND", 404);
+    }
+
+    return floor;
+  }
 }
 
 export class PrismaBuildingStore implements BuildingStore {
@@ -262,6 +320,13 @@ export class PrismaBuildingStore implements BuildingStore {
     }
     requireOrganizationAccess(user, building.organizationId);
 
+    const floor = input.floorId
+      ? await this.client.floor.findUnique({ where: { id: input.floorId } })
+      : undefined;
+    if (input.floorId && (!floor || floor.buildingId !== building.id)) {
+      throw new BuildingError("FLOOR_NOT_FOUND", 404);
+    }
+
     const unit = await this.client.unit.create({
       data: {
         organizationId: building.organizationId,
@@ -271,7 +336,45 @@ export class PrismaBuildingStore implements BuildingStore {
       },
     });
 
-    return { unit };
+    return { unit: { ...unit, floorName: floor?.name } };
+  }
+
+  async createFloor(user: AuthenticatedUser, input: CreateFloorInput) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const floor = await this.client.floor.create({
+      data: {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        name: input.name,
+        sortOrder: input.sortOrder,
+      },
+    });
+
+    return { floor };
+  }
+
+  async listFloors(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const floors = await this.client.floor.findMany({
+      where: { buildingId },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return { floors };
   }
 
   async listUnits(user: AuthenticatedUser, buildingId: string) {
@@ -284,11 +387,21 @@ export class PrismaBuildingStore implements BuildingStore {
     requireOrganizationAccess(user, building.organizationId);
 
     const units = await this.client.unit.findMany({
+      include: { floor: true },
       where: { buildingId },
       orderBy: { label: "asc" },
     });
 
-    return { units };
+    return {
+      units: units.map((unit) => ({
+        id: unit.id,
+        organizationId: unit.organizationId,
+        buildingId: unit.buildingId,
+        label: unit.label,
+        floorId: unit.floorId,
+        floorName: unit.floor?.name,
+      })),
+    };
   }
 
   async registerResident(
@@ -432,6 +545,12 @@ const createBuildingSchema = z.object({
   timezone: z.string().min(2),
 });
 
+const createFloorSchema = z.object({
+  buildingId: z.string().min(1),
+  name: z.string().min(1),
+  sortOrder: z.number().int().default(0),
+});
+
 const createUnitSchema = z.object({
   buildingId: z.string().min(1),
   label: z.string().min(1),
@@ -474,6 +593,20 @@ export async function registerBuildingRoutes(
     const user = await requireAuthenticated(authStore, request);
     const input = createUnitSchema.parse(request.body);
     return buildingStore.createUnit(user, input);
+  });
+
+  app.post("/api/v1/floors", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = createFloorSchema.parse(request.body);
+    return buildingStore.createFloor(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/floors", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listFloors(user, params.buildingId);
   });
 
   app.get("/api/v1/buildings/:buildingId/units", async (request) => {
@@ -520,5 +653,13 @@ function compareResidents(left: ResidentSummary, right: ResidentSummary) {
     left.lastName.localeCompare(right.lastName) ||
     left.firstName.localeCompare(right.firstName) ||
     left.personId.localeCompare(right.personId)
+  );
+}
+
+function compareFloors(left: FloorSummary, right: FloorSummary) {
+  return (
+    left.sortOrder - right.sortOrder ||
+    left.name.localeCompare(right.name) ||
+    left.id.localeCompare(right.id)
   );
 }

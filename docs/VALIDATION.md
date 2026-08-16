@@ -193,3 +193,30 @@ Limitaciones:
 
 - Los listados usan stores en memoria en pruebas. La ejecucion contra PostgreSQL real queda pendiente hasta tener Docker/VPS.
 - La invitacion real por email sigue pendiente hasta configurar proveedor de correo.
+
+## 2026-08-16 - Fase 2 pisos
+
+Comandos ejecutados:
+
+- `prettier --write .`: paso con binario local.
+- `prisma format --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 18 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+
+Alcance validado:
+
+- API protegida para crear pisos por edificio.
+- API protegida para listar pisos por edificio.
+- Unidades pueden asociarse a un piso existente del mismo edificio.
+- Listado de unidades expone el nombre del piso asociado.
+- Bloqueo de acceso cruzado para listado de pisos.
+- Panel web permite crear pisos y asignarlos a unidades.
+- Migracion incremental preparada para relacionar `Unit.floorId` con `Floor.id`.
+
+Limitaciones:
+
+- La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
+- Cocheras quedan pendientes como entidad/flujo separado.

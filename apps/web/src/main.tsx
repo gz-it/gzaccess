@@ -30,6 +30,15 @@ interface Unit {
   id: string;
   buildingId: string;
   label: string;
+  floorId?: string | null;
+  floorName?: string | null;
+}
+
+interface Floor {
+  id: string;
+  buildingId: string;
+  name: string;
+  sortOrder: number;
 }
 
 interface Resident {
@@ -52,6 +61,7 @@ function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [user, setUser] = useState<User | undefined>();
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [floors, setFloors] = useState<Floor[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
@@ -70,6 +80,7 @@ function App() {
   useEffect(() => {
     if (!user?.organizationIds[0]) {
       setBuildings([]);
+      setFloors([]);
       setUnits([]);
       setResidents([]);
       setSelectedBuildingId("");
@@ -86,11 +97,13 @@ function App() {
 
   useEffect(() => {
     if (!selectedBuildingId) {
+      setFloors([]);
       setUnits([]);
       setResidents([]);
       return;
     }
 
+    void loadFloors(selectedBuildingId, setFloors, setStatus);
     void loadUnits(selectedBuildingId, setUnits, setStatus);
     void loadResidents(selectedBuildingId, setResidents, setStatus);
   }, [selectedBuildingId]);
@@ -199,6 +212,7 @@ function App() {
     localStorage.removeItem(refreshTokenKey);
     setUser(undefined);
     setBuildings([]);
+    setFloors([]);
     setUnits([]);
     setResidents([]);
     setSelectedBuildingId("");
@@ -252,6 +266,7 @@ function App() {
     try {
       const response = await apiPostWithAuth<{ unit: Unit }>("/units", {
         buildingId,
+        floorId: String(form.get("floorId") || "") || undefined,
         label: String(form.get("label")),
       });
       setUnits((current) =>
@@ -260,6 +275,40 @@ function App() {
           : [...current, response.unit],
       );
       setStatus("Unidad creada");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitFloor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const buildingId = String(form.get("buildingId") || selectedBuildingId);
+    if (!buildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{ floor: Floor }>("/floors", {
+        buildingId,
+        name: String(form.get("name")),
+        sortOrder: Number(form.get("sortOrder") || 0),
+      });
+      setFloors((current) =>
+        [...current, response.floor].sort(
+          (left, right) =>
+            left.sortOrder - right.sortOrder ||
+            left.name.localeCompare(right.name),
+        ),
+      );
+      setStatus("Piso creado");
       event.currentTarget.reset();
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -379,7 +428,31 @@ function App() {
                     selectedBuildingId={selectedBuildingId}
                     setSelectedBuildingId={setSelectedBuildingId}
                   />
+                  <FloorSelect floors={floors} />
                   <Field label="Unidad" name="label" />
+                </AdminForm>
+              </Panel>
+
+              <Panel title="Piso">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Crear piso"
+                  onSubmit={submitFloor}
+                >
+                  <BuildingSelect
+                    buildings={buildings}
+                    selectedBuildingId={selectedBuildingId}
+                    setSelectedBuildingId={setSelectedBuildingId}
+                  />
+                  <div className="split-fields">
+                    <Field label="Nombre" name="name" />
+                    <Field
+                      label="Orden"
+                      name="sortOrder"
+                      defaultValue="0"
+                      type="number"
+                    />
+                  </div>
                 </AdminForm>
               </Panel>
 
@@ -634,8 +707,25 @@ function UnitSelect({
           .map((unit) => (
             <option key={unit.id} value={unit.id}>
               {unit.label}
+              {unit.floorName ? ` - ${unit.floorName}` : ""}
             </option>
           ))}
+      </select>
+    </label>
+  );
+}
+
+function FloorSelect({ floors }: { floors: Floor[] }) {
+  return (
+    <label>
+      <span>Piso</span>
+      <select name="floorId">
+        <option value="">Sin piso</option>
+        {floors.map((floor) => (
+          <option key={floor.id} value={floor.id}>
+            {floor.name}
+          </option>
+        ))}
       </select>
     </label>
   );
@@ -717,6 +807,27 @@ async function loadUnits(
       accessToken,
     );
     setUnits(response.units);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadFloors(
+  buildingId: string,
+  setFloors: (floors: Floor[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ floors: Floor[] }>(
+      `/buildings/${buildingId}/floors`,
+      accessToken,
+    );
+    setFloors(response.floors);
   } catch (error) {
     setStatus(getErrorMessage(error));
   }

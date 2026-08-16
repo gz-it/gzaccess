@@ -72,9 +72,12 @@
 - [x] API protegida para listar unidades por edificio.
 - [x] API protegida para registrar residentes individualmente.
 - [x] API protegida para listar residentes por edificio.
+- [x] API protegida para crear y listar pisos por edificio.
 - [x] Bloqueo probado contra acceso cruzado entre organizaciones.
-- [ ] Pisos y cocheras completos.
+- [x] Pisos completos para asociar unidades.
+- [ ] Cocheras completas.
 - [ ] Invitacion real por email para residentes.
 - [ ] Importacion validada de residentes.
 - [x] Panel web inicial de administracion de edificios, unidades y residentes.
 - [x] Panel web con recarga real de unidades y poblacion por edificio.
+- [x] Panel web para crear pisos y asignarlos a unidades.
