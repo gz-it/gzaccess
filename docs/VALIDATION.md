@@ -16,7 +16,7 @@ Bloqueos o limitaciones:
 
 - La falla de Vitest/Vite por carga de `vitest.config.*` y `vite.config.*` fue resuelta quitando configuraciones innecesarias para Fase 0.
 - `apps/mobile` queda como base TypeScript documentada. La instalacion completa Expo/React Native se pospone hasta estabilizar el instalador local y evitar rutas largas/parciales en Windows.
-- No se ejecutaron migraciones contra PostgreSQL porque Docker no fue levantado en esta corrida.
+- No se ejecutaron migraciones contra PostgreSQL porque Docker no esta instalado en esta maquina.
 
 ## 2026-08-16 - Fase 1 inicial
 
@@ -112,3 +112,17 @@ Alcance validado:
 - Activacion web contra `/api/v1/auth/activation/complete`.
 - Recuperacion web contra `/api/v1/auth/password-reset/request` y `/complete`.
 - Restauracion de sesion con `/api/v1/auth/me`.
+
+## 2026-08-16 - Migracion inicial
+
+Comandos ejecutados:
+
+- `prisma migrate diff --from-empty --to-schema-datamodel packages/database/prisma/schema.prisma --script`: paso.
+
+Resultado:
+
+- Migracion SQL inicial generada en `packages/database/prisma/migrations/20260816204000_initial_schema/migration.sql`.
+
+Limitacion:
+
+- Docker no esta disponible en esta maquina, por lo que `docker compose up` y `prisma migrate deploy` contra PostgreSQL local quedan pendientes.

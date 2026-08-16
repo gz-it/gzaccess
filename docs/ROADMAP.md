@@ -32,6 +32,7 @@
 - [x] Monorepo pnpm configurado.
 - [x] Docker Compose con PostgreSQL, Redis y MinIO.
 - [x] Prisma y esquema inicial.
+- [x] Migracion SQL inicial generada.
 - [x] API health.
 - [x] Frontend web iniciado.
 - [ ] Mobile Expo iniciado. Base TypeScript creada; instalacion Expo pendiente por bloqueo del instalador local.
@@ -45,6 +46,7 @@
 - Dominio, proveedor de email, push, cuentas Google Play/App Store: no configurados todavia.
 - Revision legal de privacidad/biometria: pendiente antes de produccion.
 - Instalacion completa de dependencias Expo/React Native: pendiente. La Fase 0 conserva base TypeScript mobile; Expo real debe reincorporarse antes de validar Fase 3.
+- Docker local: no instalado en esta maquina; falta aplicar migraciones contra PostgreSQL local.
 
 ## Fase 1 checklist
 
