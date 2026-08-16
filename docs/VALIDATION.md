@@ -80,3 +80,18 @@ Alcance validado:
 Limitaciones:
 
 - Todavia falta proveedor real de email. En entornos no productivos el token de recuperacion puede devolverse en la respuesta para pruebas; en produccion no se devuelve.
+
+## 2026-08-16 - Fase 1 RBAC y aislamiento
+
+Comandos ejecutados:
+
+- `pnpm format`: paso.
+- `pnpm lint`: paso.
+- `pnpm test`: paso, 3 archivos y 13 tests.
+
+Alcance validado:
+
+- Deduccion de permisos por roles.
+- Verificacion explicita de permisos.
+- Verificacion de acceso por organizacion asignada.
+- Errores de autorizacion diferenciados.

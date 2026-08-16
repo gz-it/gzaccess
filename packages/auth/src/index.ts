@@ -5,7 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { promisify } from "node:util";
-import type { Role } from "@gzaccess/contracts";
+import type { AuthenticatedUser, EntityId, Role } from "@gzaccess/contracts";
 
 export const permissions = [
   "organization:manage",
@@ -38,6 +38,44 @@ export function hasPermission(roles: Role[], permission: Permission): boolean {
   return roles.some((role) =>
     (rolePermissions[role] ?? []).includes(permission),
   );
+}
+
+export function getPermissionsForRoles(roles: Role[]): Permission[] {
+  return [...new Set(roles.flatMap((role) => rolePermissions[role] ?? []))];
+}
+
+export function canAccessOrganization(
+  user: AuthenticatedUser,
+  organizationId: EntityId,
+): boolean {
+  return (
+    hasPermission(user.roles, "organization:manage") &&
+    user.organizationIds.includes(organizationId)
+  );
+}
+
+export function requirePermission(
+  user: AuthenticatedUser,
+  permission: Permission,
+): void {
+  if (!hasPermission(user.roles, permission)) {
+    throw new AuthorizationError("FORBIDDEN");
+  }
+}
+
+export function requireOrganizationAccess(
+  user: AuthenticatedUser,
+  organizationId: EntityId,
+): void {
+  if (!canAccessOrganization(user, organizationId)) {
+    throw new AuthorizationError("ORGANIZATION_FORBIDDEN");
+  }
+}
+
+export class AuthorizationError extends Error {
+  constructor(readonly code: "FORBIDDEN" | "ORGANIZATION_FORBIDDEN") {
+    super(code);
+  }
 }
 
 const scrypt = promisify(scryptCallback);
