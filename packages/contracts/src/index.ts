@@ -48,3 +48,17 @@ export interface HealthResponse {
   version: string;
   timestamp: string;
 }
+
+export interface AuthenticatedUser {
+  id: EntityId;
+  email: string;
+  displayName: string;
+  roles: Role[];
+  organizationIds: EntityId[];
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresInSeconds: number;
+}

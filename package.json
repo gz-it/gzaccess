@@ -11,7 +11,7 @@
     "format": "prettier --write .",
     "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "pnpm --filter @gzaccess/contracts build && pnpm --filter @gzaccess/device-core build && pnpm --filter @gzaccess/device-simulator build && pnpm -r --sort --workspace-concurrency=1 --if-present typecheck"
+    "typecheck": "pnpm --filter @gzaccess/contracts build && pnpm --filter @gzaccess/auth build && pnpm --filter @gzaccess/device-core build && pnpm --filter @gzaccess/device-simulator build && pnpm -r --sort --workspace-concurrency=1 --if-present typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

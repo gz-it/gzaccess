@@ -70,6 +70,7 @@ model User {
   organization   Organization? @relation(fields: [organizationId], references: [id])
   memberships    OrganizationMembership[]
   sessions       Session[]
+  activationTokens ActivationToken[]
   persons        Person[]
 
   @@index([organizationId])
@@ -89,10 +90,23 @@ model OrganizationMembership {
   @@index([userId])
 }
 
+model ActivationToken {
+  id             String   @id @default(uuid())
+  userId         String
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Session {
   id           String   @id @default(uuid())
   userId       String
-  refreshToken String   @unique
+  refreshTokenHash String   @unique
   expiresAt    DateTime
   revokedAt    DateTime?
   createdAt    DateTime @default(now())
@@ -358,4 +372,3 @@ model AuditLog {
   @@index([buildingId])
   @@index([entityType, entityId])
 }
-

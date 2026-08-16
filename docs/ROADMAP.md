@@ -12,7 +12,7 @@
 | Fase                                 | Estado    | Resultado esperado                                         |
 | ------------------------------------ | --------- | ---------------------------------------------------------- |
 | 0 - Especificacion y base ejecutable | validada  | Proyecto completo ejecutable en desarrollo.                |
-| 1 - Identidad, organizaciones y RBAC | pendiente | Cuentas reales y seguras para cada rol.                    |
+| 1 - Identidad, organizaciones y RBAC | en curso  | Cuentas reales y seguras para cada rol.                    |
 | 2 - Edificio y residentes            | pendiente | Un edificio administra su poblacion completa.              |
 | 3 - App, rostros y vehiculos         | pendiente | Residentes autogestionan rostro y vehiculos.               |
 | 4 - Permisos y simulador             | pendiente | Recorrido completo validado sin hardware.                  |
@@ -45,3 +45,17 @@
 - Dominio, proveedor de email, push, cuentas Google Play/App Store: no configurados todavia.
 - Revision legal de privacidad/biometria: pendiente antes de produccion.
 - Instalacion completa de dependencias Expo/React Native: pendiente. La Fase 0 conserva base TypeScript mobile; Expo real debe reincorporarse antes de validar Fase 3.
+
+## Fase 1 checklist
+
+- [x] Hash seguro de passwords con `scrypt`.
+- [x] Tokens opacos de activacion, access y refresh hasheados internamente.
+- [x] Bootstrap de administrador de plataforma para desarrollo/test.
+- [x] Activacion de cuenta con token de un solo uso.
+- [x] Login, refresh y `/api/v1/auth/me`.
+- [x] RBAC compartido con pruebas unitarias.
+- [ ] Persistencia real de auth con Prisma/PostgreSQL.
+- [ ] Recuperacion de password.
+- [ ] MFA configurable para roles administrativos.
+- [ ] Auditoria de login, activacion y sesiones.
+- [ ] UI web y mobile para login/activacion.
