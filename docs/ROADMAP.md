@@ -59,4 +59,5 @@
 - [x] Recuperacion de password.
 - [ ] MFA configurable para roles administrativos.
 - [x] Auditoria inicial de bootstrap, activacion, login y reset.
-- [ ] UI web y mobile para login/activacion.
+- [x] UI web para login, activacion y recuperacion.
+- [ ] UI mobile para login/activacion.

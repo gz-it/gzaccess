@@ -95,3 +95,20 @@ Alcance validado:
 - Verificacion explicita de permisos.
 - Verificacion de acceso por organizacion asignada.
 - Errores de autorizacion diferenciados.
+
+## 2026-08-16 - Fase 1 UI web de autenticacion
+
+Comandos ejecutados:
+
+- `pnpm format`: paso.
+- `pnpm lint`: paso.
+- `pnpm typecheck`: paso.
+- `pnpm test`: paso, 3 archivos y 13 tests.
+- `pnpm build`: paso.
+
+Alcance validado:
+
+- Login web contra `/api/v1/auth/login`.
+- Activacion web contra `/api/v1/auth/activation/complete`.
+- Recuperacion web contra `/api/v1/auth/password-reset/request` y `/complete`.
+- Restauracion de sesion con `/api/v1/auth/me`.
