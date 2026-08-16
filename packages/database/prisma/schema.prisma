@@ -71,6 +71,7 @@ model User {
   memberships    OrganizationMembership[]
   sessions       Session[]
   activationTokens ActivationToken[]
+  passwordResetTokens PasswordResetToken[]
   persons        Person[]
 
   @@index([organizationId])
@@ -91,6 +92,19 @@ model OrganizationMembership {
 }
 
 model ActivationToken {
+  id             String   @id @default(uuid())
+  userId         String
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
   id             String   @id @default(uuid())
   userId         String
   tokenHash      String   @unique

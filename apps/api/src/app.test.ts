@@ -100,4 +100,81 @@ describe("auth flow", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ error: "INVALID_CREDENTIALS" });
   });
+
+  it("resets a password and revokes previous refresh tokens", async () => {
+    const app = buildApp();
+    const bootstrap = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/dev/bootstrap-platform-admin",
+      payload: {
+        organizationName: "GZIT",
+        email: "reset@gzit.test",
+        displayName: "Reset Admin",
+      },
+    });
+    const activationToken = bootstrap.json<{ activationToken: string }>()
+      .activationToken;
+
+    const activation = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/activation/complete",
+      payload: {
+        token: activationToken,
+        password: "Password!123",
+      },
+    });
+    const oldRefreshToken = activation.json<{
+      tokens: { refreshToken: string };
+    }>().tokens.refreshToken;
+
+    const requestReset = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/password-reset/request",
+      payload: {
+        email: "reset@gzit.test",
+      },
+    });
+
+    expect(requestReset.statusCode).toBe(200);
+    const resetToken = requestReset.json<{ resetToken: string }>().resetToken;
+    expect(resetToken).toBeTruthy();
+
+    const completeReset = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/password-reset/complete",
+      payload: {
+        token: resetToken,
+        password: "NewPassword!123",
+      },
+    });
+
+    expect(completeReset.statusCode).toBe(200);
+
+    const oldRefresh = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/refresh",
+      payload: { refreshToken: oldRefreshToken },
+    });
+    expect(oldRefresh.statusCode).toBe(401);
+
+    const oldLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "reset@gzit.test",
+        password: "Password!123",
+      },
+    });
+    expect(oldLogin.statusCode).toBe(401);
+
+    const newLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "reset@gzit.test",
+        password: "NewPassword!123",
+      },
+    });
+    expect(newLogin.statusCode).toBe(200);
+  });
 });

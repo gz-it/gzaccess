@@ -55,7 +55,7 @@
 - [x] Login, refresh y `/api/v1/auth/me`.
 - [x] RBAC compartido con pruebas unitarias.
 - [x] Persistencia real de auth con Prisma/PostgreSQL.
-- [ ] Recuperacion de password.
+- [x] Recuperacion de password.
 - [ ] MFA configurable para roles administrativos.
-- [ ] Auditoria de login, activacion y sesiones.
+- [x] Auditoria inicial de bootstrap, activacion, login y reset.
 - [ ] UI web y mobile para login/activacion.

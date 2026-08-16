@@ -14,6 +14,7 @@ import { prisma, type PrismaClient } from "@gzaccess/database";
 const accessTokenTtlSeconds = 15 * 60;
 const refreshTokenTtlSeconds = 30 * 24 * 60 * 60;
 const activationTokenTtlSeconds = 48 * 60 * 60;
+const passwordResetTokenTtlSeconds = 60 * 60;
 
 interface StoredOrganization {
   id: string;
@@ -35,6 +36,13 @@ interface StoredMembership {
 }
 
 interface StoredActivation {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  consumedAt?: Date;
+}
+
+interface StoredPasswordReset {
   userId: string;
   tokenHash: string;
   expiresAt: Date;
@@ -74,6 +82,13 @@ export interface AuthStore {
   }>;
   refresh(input: { refreshToken: string }): Promise<AuthTokens>;
   authenticate(accessToken: string): Promise<AuthenticatedUser | undefined>;
+  requestPasswordReset(input: {
+    email: string;
+  }): Promise<{ resetToken?: string }>;
+  completePasswordReset(input: {
+    token: string;
+    password: string;
+  }): Promise<{ ok: true }>;
 }
 
 export class InMemoryAuthStore implements AuthStore {
@@ -81,6 +96,7 @@ export class InMemoryAuthStore implements AuthStore {
   private readonly users = new Map<string, StoredUser>();
   private readonly memberships: StoredMembership[] = [];
   private readonly activations = new Map<string, StoredActivation>();
+  private readonly passwordResets = new Map<string, StoredPasswordReset>();
   private readonly sessions = new Map<string, StoredSession>();
 
   async createBootstrapAdmin(input: {
@@ -121,6 +137,13 @@ export class InMemoryAuthStore implements AuthStore {
       tokenHash: hashOpaqueToken(activationToken),
       expiresAt: addSeconds(new Date(), activationTokenTtlSeconds),
     });
+    this.audit({
+      actorUserId: user.id,
+      action: "auth.bootstrap_platform_admin",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
 
     return { user: this.toAuthenticatedUser(user), activationToken };
   }
@@ -143,6 +166,13 @@ export class InMemoryAuthStore implements AuthStore {
     user.passwordHash = await hashPassword(input.password);
     user.isActive = true;
     activation.consumedAt = new Date();
+    this.audit({
+      actorUserId: user.id,
+      action: "auth.activation.complete",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
 
     return {
       user: this.toAuthenticatedUser(user),
@@ -166,8 +196,23 @@ export class InMemoryAuthStore implements AuthStore {
       user.passwordHash,
     );
     if (!validPassword) {
+      this.audit({
+        actorUserId: user.id,
+        action: "auth.login",
+        entityType: "User",
+        entityId: user.id,
+        result: "FAILED",
+      });
       throw new AuthError("INVALID_CREDENTIALS", 401);
     }
+
+    this.audit({
+      actorUserId: user.id,
+      action: "auth.login",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
 
     return {
       user: this.toAuthenticatedUser(user),
@@ -202,6 +247,58 @@ export class InMemoryAuthStore implements AuthStore {
     return user.isActive ? this.toAuthenticatedUser(user) : undefined;
   }
 
+  async requestPasswordReset(input: {
+    email: string;
+  }): Promise<{ resetToken?: string }> {
+    const user = [...this.users.values()].find(
+      (item) => item.email === normalizeEmail(input.email),
+    );
+    if (!user || !user.isActive) {
+      return {};
+    }
+
+    const resetToken = createOpaqueToken();
+    this.passwordResets.set(hashOpaqueToken(resetToken), {
+      userId: user.id,
+      tokenHash: hashOpaqueToken(resetToken),
+      expiresAt: addSeconds(new Date(), passwordResetTokenTtlSeconds),
+    });
+    this.audit({
+      actorUserId: user.id,
+      action: "auth.password_reset.request",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
+
+    return { resetToken };
+  }
+
+  async completePasswordReset(input: {
+    token: string;
+    password: string;
+  }): Promise<{ ok: true }> {
+    const tokenHash = hashOpaqueToken(input.token);
+    const reset = this.passwordResets.get(tokenHash);
+    if (!reset || reset.consumedAt || reset.expiresAt.getTime() <= Date.now()) {
+      throw new AuthError("INVALID_OR_EXPIRED_PASSWORD_RESET", 400);
+    }
+
+    const user = this.getUser(reset.userId);
+    user.passwordHash = await hashPassword(input.password);
+    reset.consumedAt = new Date();
+    this.revokeUserSessions(user.id);
+    this.audit({
+      actorUserId: user.id,
+      action: "auth.password_reset.complete",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
+
+    return { ok: true };
+  }
+
   private createTokens(userId: string): AuthTokens {
     const refreshToken = createOpaqueToken();
     const now = new Date();
@@ -226,6 +323,25 @@ export class InMemoryAuthStore implements AuthStore {
     }
 
     return user;
+  }
+
+  private revokeUserSessions(userId: string): void {
+    for (const session of this.sessions.values()) {
+      if (session.userId === userId && !session.revokedAt) {
+        session.revokedAt = new Date();
+      }
+    }
+  }
+
+  private audit(input: {
+    actorUserId?: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    result: "SUCCESS" | "FAILED";
+  }): void {
+    void input;
+    // In-memory tests assert behavior; durable audit is handled by PrismaAuthStore.
   }
 
   private toAuthenticatedUser(user: StoredUser): AuthenticatedUser {
@@ -288,6 +404,16 @@ export class PrismaAuthStore implements AuthStore {
           expiresAt: addSeconds(new Date(), activationTokenTtlSeconds),
         },
       });
+      await transaction.auditLog.create({
+        data: {
+          organizationId: organization.id,
+          actorUserId: user.id,
+          action: "auth.bootstrap_platform_admin",
+          entityType: "User",
+          entityId: user.id,
+          result: "SUCCESS",
+        },
+      });
 
       return this.findUserForAuth(user.id, transaction);
     });
@@ -323,6 +449,15 @@ export class PrismaAuthStore implements AuthStore {
         where: { id: activation.id },
         data: { consumedAt: new Date() },
       });
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: activation.userId,
+          action: "auth.activation.complete",
+          entityType: "User",
+          entityId: activation.userId,
+          result: "SUCCESS",
+        },
+      });
 
       return this.findUserForAuth(activation.userId, transaction);
     });
@@ -350,8 +485,25 @@ export class PrismaAuthStore implements AuthStore {
       user.passwordHash,
     );
     if (!validPassword) {
+      await this.audit({
+        actorUserId: user.id,
+        organizationId: user.organizationId ?? undefined,
+        action: "auth.login",
+        entityType: "User",
+        entityId: user.id,
+        result: "FAILED",
+      });
       throw new AuthError("INVALID_CREDENTIALS", 401);
     }
+
+    await this.audit({
+      actorUserId: user.id,
+      organizationId: user.organizationId ?? undefined,
+      action: "auth.login",
+      entityType: "User",
+      entityId: user.id,
+      result: "SUCCESS",
+    });
 
     return {
       user: toAuthenticatedUser(user),
@@ -396,6 +548,83 @@ export class PrismaAuthStore implements AuthStore {
     return user?.isActive ? toAuthenticatedUser(user) : undefined;
   }
 
+  async requestPasswordReset(input: {
+    email: string;
+  }): Promise<{ resetToken?: string }> {
+    const user = await this.client.user.findUnique({
+      where: { email: normalizeEmail(input.email) },
+    });
+    if (!user || !user.isActive) {
+      return {};
+    }
+
+    const resetToken = createOpaqueToken();
+    await this.client.$transaction([
+      this.client.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashOpaqueToken(resetToken),
+          expiresAt: addSeconds(new Date(), passwordResetTokenTtlSeconds),
+        },
+      }),
+      this.client.auditLog.create({
+        data: {
+          organizationId: user.organizationId,
+          actorUserId: user.id,
+          action: "auth.password_reset.request",
+          entityType: "User",
+          entityId: user.id,
+          result: "SUCCESS",
+        },
+      }),
+    ]);
+
+    return process.env.NODE_ENV === "production" ? {} : { resetToken };
+  }
+
+  async completePasswordReset(input: {
+    token: string;
+    password: string;
+  }): Promise<{ ok: true }> {
+    const tokenHash = hashOpaqueToken(input.token);
+    await this.client.$transaction(async (transaction) => {
+      const reset = await transaction.passwordResetToken.findUnique({
+        where: { tokenHash },
+      });
+      if (
+        !reset ||
+        reset.consumedAt ||
+        reset.expiresAt.getTime() <= Date.now()
+      ) {
+        throw new AuthError("INVALID_OR_EXPIRED_PASSWORD_RESET", 400);
+      }
+
+      await transaction.user.update({
+        where: { id: reset.userId },
+        data: { passwordHash: await hashPassword(input.password) },
+      });
+      await transaction.passwordResetToken.update({
+        where: { id: reset.id },
+        data: { consumedAt: new Date() },
+      });
+      await transaction.session.updateMany({
+        where: { userId: reset.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await transaction.auditLog.create({
+        data: {
+          actorUserId: reset.userId,
+          action: "auth.password_reset.complete",
+          entityType: "User",
+          entityId: reset.userId,
+          result: "SUCCESS",
+        },
+      });
+    });
+
+    return { ok: true };
+  }
+
   private async createTokens(userId: string): Promise<AuthTokens> {
     const refreshToken = createOpaqueToken();
     await this.client.session.create({
@@ -411,6 +640,26 @@ export class PrismaAuthStore implements AuthStore {
       refreshToken,
       expiresInSeconds: accessTokenTtlSeconds,
     };
+  }
+
+  private async audit(input: {
+    organizationId?: string;
+    actorUserId?: string;
+    action: string;
+    entityType: string;
+    entityId: string;
+    result: "SUCCESS" | "FAILED";
+  }): Promise<void> {
+    await this.client.auditLog.create({
+      data: {
+        organizationId: input.organizationId,
+        actorUserId: input.actorUserId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        result: input.result,
+      },
+    });
   }
 
   private async findUserForAuth(
@@ -458,6 +707,15 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(20),
 });
 
+const requestPasswordResetSchema = z.object({
+  email: z.string().email(),
+});
+
+const completePasswordResetSchema = z.object({
+  token: z.string().min(20),
+  password: z.string().min(10),
+});
+
 export async function registerAuthRoutes(
   app: FastifyInstance,
   store: AuthStore,
@@ -487,6 +745,16 @@ export async function registerAuthRoutes(
   app.post("/api/v1/auth/refresh", async (request) => {
     const input = refreshSchema.parse(request.body);
     return store.refresh(input);
+  });
+
+  app.post("/api/v1/auth/password-reset/request", async (request) => {
+    const input = requestPasswordResetSchema.parse(request.body);
+    return store.requestPasswordReset(input);
+  });
+
+  app.post("/api/v1/auth/password-reset/complete", async (request) => {
+    const input = completePasswordResetSchema.parse(request.body);
+    return store.completePasswordReset(input);
   });
 
   app.get("/api/v1/auth/me", async (request, reply) => {
