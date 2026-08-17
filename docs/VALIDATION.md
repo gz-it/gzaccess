@@ -402,6 +402,26 @@ Limitaciones:
 - La imagen queda solo como referencia local hasta tener storage real y endpoint seguro de carga.
 - No se genera ni almacena template biometrico; eso queda pendiente de proveedor/SDK y revision legal.
 
+## 2026-08-17 - Fase 4 motor de acceso y simulador
+
+Comandos ejecutados:
+
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 4 archivos y 30 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+
+Alcance validado:
+
+- Motor puro `evaluateAccessAttempt` para permitir/denegar por credencial activa, vigencia y permiso sobre punto de acceso.
+- Simulador de dispositivo con credenciales enroladas, permisos configurables e intentos de acceso permitidos/denegados.
+- Razon de denegacion segura para dispositivo offline.
+
+Limitaciones:
+
+- Todavia falta API y panel web para administrar puntos de acceso y politicas.
+- Todavia no hay sincronizacion edge ni hardware real.
+
 ## 2026-08-17 - Fase 3 perfil residencial mobile
 
 Comandos ejecutados:

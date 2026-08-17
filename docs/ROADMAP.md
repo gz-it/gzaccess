@@ -15,7 +15,7 @@
 | 1 - Identidad, organizaciones y RBAC | validada  | Cuentas reales y seguras para cada rol.                    |
 | 2 - Edificio y residentes            | en curso  | Un edificio administra su poblacion completa.              |
 | 3 - App, rostros y vehiculos         | en curso  | Residentes autogestionan rostro y vehiculos.               |
-| 4 - Permisos y simulador             | pendiente | Recorrido completo validado sin hardware.                  |
+| 4 - Permisos y simulador             | en curso  | Recorrido completo validado sin hardware.                  |
 | 5 - GzAccess Edge                    | pendiente | Nube y red local se comunican de forma segura.             |
 | 6 - Visitantes                       | pendiente | Ciclo de visita completo con simulador.                    |
 | 7 - Primer conector real             | pendiente | Primer equipo real validado o bloqueo externo documentado. |
@@ -103,3 +103,11 @@
 - [x] Captura de rostro y consentimiento biometrico local en app.
 - [ ] Carga de imagenes/archivos con storage real.
 - [ ] Push mobile.
+
+## Fase 4 checklist
+
+- [x] Motor puro de decision de acceso por credencial, permiso y punto de acceso.
+- [x] Simulador local de intentos permitidos y denegados.
+- [ ] API de puntos de acceso y politicas.
+- [ ] Panel web para configurar permisos.
+- [ ] Recorrido completo mobile/API/simulador sin hardware.
