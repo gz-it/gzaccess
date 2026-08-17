@@ -108,6 +108,7 @@
 
 - [x] Motor puro de decision de acceso por credencial, permiso y punto de acceso.
 - [x] Simulador local de intentos permitidos y denegados.
-- [ ] API de puntos de acceso y politicas.
+- [x] API de zonas y puntos de acceso.
+- [ ] API de politicas de acceso.
 - [ ] Panel web para configurar permisos.
 - [ ] Recorrido completo mobile/API/simulador sin hardware.

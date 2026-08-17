@@ -46,6 +46,23 @@ export interface ParkingSpaceSummary {
   label: string;
 }
 
+export interface ZoneSummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  name: string;
+}
+
+export interface AccessPointSummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  name: string;
+  kind: string;
+}
+
 export interface ResidentInvite {
   organizationId: string;
   buildingId: string;
@@ -118,6 +135,22 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ parkingSpaces: ParkingSpaceSummary[] }>;
+  createZone(
+    user: AuthenticatedUser,
+    input: CreateZoneInput,
+  ): Promise<{ zone: ZoneSummary }>;
+  listZones(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ zones: ZoneSummary[] }>;
+  createAccessPoint(
+    user: AuthenticatedUser,
+    input: CreateAccessPointInput,
+  ): Promise<{ accessPoint: AccessPointSummary }>;
+  listAccessPoints(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ accessPoints: AccessPointSummary[] }>;
   createUnit(
     user: AuthenticatedUser,
     input: CreateUnitInput,
@@ -144,6 +177,8 @@ export interface BuildingStore {
 type CreateBuildingInput = z.infer<typeof createBuildingSchema>;
 type CreateFloorInput = z.infer<typeof createFloorSchema>;
 type CreateParkingSpaceInput = z.infer<typeof createParkingSpaceSchema>;
+type CreateZoneInput = z.infer<typeof createZoneSchema>;
+type CreateAccessPointInput = z.infer<typeof createAccessPointSchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 type ImportResidentsInput = z.infer<typeof importResidentsSchema>;
@@ -171,6 +206,8 @@ interface StoredUser {
 export class InMemoryBuildingStore implements BuildingStore {
   private readonly buildings = new Map<string, BuildingSummary>();
   private readonly floors = new Map<string, FloorSummary>();
+  private readonly zones = new Map<string, ZoneSummary>();
+  private readonly accessPoints = new Map<string, AccessPointSummary>();
   private readonly parkingSpaces = new Map<string, ParkingSpaceSummary>();
   private readonly units = new Map<string, UnitSummary>();
   private readonly persons = new Map<string, StoredPerson>();
@@ -292,6 +329,65 @@ export class InMemoryBuildingStore implements BuildingStore {
       parkingSpaces: [...this.parkingSpaces.values()]
         .filter((parkingSpace) => parkingSpace.buildingId === buildingId)
         .sort(compareParkingSpaces),
+    };
+  }
+
+  async createZone(user: AuthenticatedUser, input: CreateZoneInput) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const zone: ZoneSummary = {
+      id: createId("zon"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      name: input.name,
+    };
+    this.zones.set(zone.id, zone);
+
+    return { zone };
+  }
+
+  async listZones(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      zones: [...this.zones.values()]
+        .filter((zone) => zone.buildingId === buildingId)
+        .sort(compareZones),
+    };
+  }
+
+  async createAccessPoint(
+    user: AuthenticatedUser,
+    input: CreateAccessPointInput,
+  ) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const zone = input.zoneId
+      ? this.getZone(input.zoneId, building.id)
+      : undefined;
+    const accessPoint: AccessPointSummary = {
+      id: createId("acp"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      zoneId: zone?.id,
+      zoneName: zone?.name,
+      name: input.name,
+      kind: input.kind,
+    };
+    this.accessPoints.set(accessPoint.id, accessPoint);
+
+    return { accessPoint };
+  }
+
+  async listAccessPoints(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      accessPoints: [...this.accessPoints.values()]
+        .filter((accessPoint) => accessPoint.buildingId === buildingId)
+        .sort(compareAccessPoints),
     };
   }
 
@@ -454,6 +550,15 @@ export class InMemoryBuildingStore implements BuildingStore {
     }
 
     return unit;
+  }
+
+  private getZone(zoneId: string, buildingId: string): ZoneSummary {
+    const zone = this.zones.get(zoneId);
+    if (!zone || zone.buildingId !== buildingId) {
+      throw new BuildingError("ZONE_NOT_FOUND", 404);
+    }
+
+    return zone;
   }
 }
 
@@ -650,6 +755,114 @@ export class PrismaBuildingStore implements BuildingStore {
         unitId: parkingSpace.unitId,
         unitLabel: parkingSpace.unit?.label,
         label: parkingSpace.label,
+      })),
+    };
+  }
+
+  async createZone(user: AuthenticatedUser, input: CreateZoneInput) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const zone = await this.client.zone.create({
+      data: {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        name: input.name,
+      },
+    });
+
+    return { zone };
+  }
+
+  async listZones(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const zones = await this.client.zone.findMany({
+      where: { buildingId },
+      orderBy: { name: "asc" },
+    });
+
+    return { zones };
+  }
+
+  async createAccessPoint(
+    user: AuthenticatedUser,
+    input: CreateAccessPointInput,
+  ) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const zone = input.zoneId
+      ? await this.client.zone.findUnique({ where: { id: input.zoneId } })
+      : undefined;
+    if (input.zoneId && (!zone || zone.buildingId !== building.id)) {
+      throw new BuildingError("ZONE_NOT_FOUND", 404);
+    }
+
+    const accessPoint = await this.client.accessPoint.create({
+      include: { zone: true },
+      data: {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        zoneId: zone?.id,
+        name: input.name,
+        kind: input.kind,
+      },
+    });
+
+    return {
+      accessPoint: {
+        id: accessPoint.id,
+        organizationId: accessPoint.organizationId,
+        buildingId: accessPoint.buildingId,
+        zoneId: accessPoint.zoneId,
+        zoneName: accessPoint.zone?.name,
+        name: accessPoint.name,
+        kind: accessPoint.kind,
+      },
+    };
+  }
+
+  async listAccessPoints(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const accessPoints = await this.client.accessPoint.findMany({
+      include: { zone: true },
+      where: { buildingId },
+      orderBy: { name: "asc" },
+    });
+
+    return {
+      accessPoints: accessPoints.map((accessPoint) => ({
+        id: accessPoint.id,
+        organizationId: accessPoint.organizationId,
+        buildingId: accessPoint.buildingId,
+        zoneId: accessPoint.zoneId,
+        zoneName: accessPoint.zone?.name,
+        name: accessPoint.name,
+        kind: accessPoint.kind,
       })),
     };
   }
@@ -931,6 +1144,18 @@ const createUnitSchema = z.object({
   floorId: z.string().optional(),
 });
 
+const createZoneSchema = z.object({
+  buildingId: z.string().min(1),
+  name: z.string().min(1).max(120),
+});
+
+const createAccessPointSchema = z.object({
+  buildingId: z.string().min(1),
+  zoneId: z.string().min(1).optional(),
+  name: z.string().min(1).max(120),
+  kind: z.enum(["PEDESTRIAN", "GARAGE", "SERVICE", "ELEVATOR"]),
+});
+
 const registerResidentSchema = z.object({
   buildingId: z.string().min(1),
   unitId: z.string().optional(),
@@ -1030,6 +1255,34 @@ export async function registerBuildingRoutes(
       .object({ buildingId: z.string().min(1) })
       .parse(request.params);
     return buildingStore.listParkingSpaces(user, params.buildingId);
+  });
+
+  app.post("/api/v1/zones", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = createZoneSchema.parse(request.body);
+    return buildingStore.createZone(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/zones", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listZones(user, params.buildingId);
+  });
+
+  app.post("/api/v1/access-points", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = createAccessPointSchema.parse(request.body);
+    return buildingStore.createAccessPoint(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/access-points", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listAccessPoints(user, params.buildingId);
   });
 
   app.post("/api/v1/residents", async (request) => {
@@ -1192,6 +1445,17 @@ function compareParkingSpaces(
   return (
     left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
   );
+}
+
+function compareZones(left: ZoneSummary, right: ZoneSummary) {
+  return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+}
+
+function compareAccessPoints(
+  left: AccessPointSummary,
+  right: AccessPointSummary,
+) {
+  return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
 }
 
 function compareVehicles(left: VehicleSummary, right: VehicleSummary) {

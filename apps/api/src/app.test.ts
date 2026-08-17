@@ -483,6 +483,91 @@ describe("building administration", () => {
     });
   });
 
+  it("creates zones and access points inside one building", async () => {
+    const app = buildApp();
+    const { accessToken, organizationId } = await createActivatedAdmin(
+      app,
+      "access-points@gzit.test",
+    );
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(accessToken),
+      payload: {
+        organizationId,
+        name: "Torre Accesos",
+        address: "Accesos 123",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    expect(building.statusCode).toBe(200);
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const zone = await app.inject({
+      method: "POST",
+      url: "/api/v1/zones",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        name: "PB",
+      },
+    });
+    expect(zone.statusCode).toBe(200);
+    const zoneId = zone.json<{ zone: { id: string } }>().zone.id;
+
+    const accessPoint = await app.inject({
+      method: "POST",
+      url: "/api/v1/access-points",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        zoneId,
+        name: "Puerta principal",
+        kind: "PEDESTRIAN",
+      },
+    });
+    expect(accessPoint.statusCode).toBe(200);
+    expect(accessPoint.json()).toMatchObject({
+      accessPoint: {
+        buildingId,
+        zoneId,
+        zoneName: "PB",
+        name: "Puerta principal",
+        kind: "PEDESTRIAN",
+      },
+    });
+
+    const zones = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/zones`,
+      headers: authHeaders(accessToken),
+    });
+    expect(zones.statusCode).toBe(200);
+    expect(zones.json()).toMatchObject({
+      zones: [{ id: zoneId, buildingId, name: "PB" }],
+    });
+
+    const accessPoints = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/access-points`,
+      headers: authHeaders(accessToken),
+    });
+    expect(accessPoints.statusCode).toBe(200);
+    expect(accessPoints.json()).toMatchObject({
+      accessPoints: [
+        {
+          buildingId,
+          zoneId,
+          zoneName: "PB",
+          name: "Puerta principal",
+          kind: "PEDESTRIAN",
+        },
+      ],
+    });
+  });
+
   it("returns the resident profile for the authenticated session", async () => {
     const app = buildApp();
     const email = "resident-profile@gzit.test";
@@ -711,6 +796,35 @@ describe("building administration", () => {
     const response = await app.inject({
       method: "GET",
       url: `/api/v1/buildings/${buildingId}/vehicles`,
+      headers: authHeaders(adminB.accessToken),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+
+  it("blocks cross-organization access point listing", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "access-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "access-b@gzit.test");
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminA.organizationId,
+        name: "Torre Acceso Cruzado",
+        address: "Calle Siete 700",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/access-points`,
       headers: authHeaders(adminB.accessToken),
     });
 

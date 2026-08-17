@@ -422,6 +422,28 @@ Limitaciones:
 - Todavia falta API y panel web para administrar puntos de acceso y politicas.
 - Todavia no hay sincronizacion edge ni hardware real.
 
+## 2026-08-17 - Fase 4 API de zonas y puntos de acceso
+
+Comandos ejecutados:
+
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 4 archivos y 32 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+
+Alcance validado:
+
+- API protegida para crear zonas por edificio.
+- API protegida para listar zonas por edificio.
+- API protegida para crear puntos de acceso por edificio y zona opcional.
+- API protegida para listar puntos de acceso por edificio.
+- Bloqueo probado contra acceso cruzado entre organizaciones.
+
+Limitaciones:
+
+- Todavia falta API de politicas de acceso y panel web de configuracion.
+- Todavia no hay sincronizacion edge ni hardware real.
+
 ## 2026-08-17 - Fase 3 perfil residencial mobile
 
 Comandos ejecutados:
