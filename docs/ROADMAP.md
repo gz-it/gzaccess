@@ -12,7 +12,7 @@
 | Fase                                 | Estado    | Resultado esperado                                         |
 | ------------------------------------ | --------- | ---------------------------------------------------------- |
 | 0 - Especificacion y base ejecutable | validada  | Proyecto completo ejecutable en desarrollo.                |
-| 1 - Identidad, organizaciones y RBAC | en curso  | Cuentas reales y seguras para cada rol.                    |
+| 1 - Identidad, organizaciones y RBAC | validada  | Cuentas reales y seguras para cada rol.                    |
 | 2 - Edificio y residentes            | en curso  | Un edificio administra su poblacion completa.              |
 | 3 - App, rostros y vehiculos         | pendiente | Residentes autogestionan rostro y vehiculos.               |
 | 4 - Permisos y simulador             | pendiente | Recorrido completo validado sin hardware.                  |
@@ -35,7 +35,7 @@
 - [x] Migracion SQL inicial generada.
 - [x] API health.
 - [x] Frontend web iniciado.
-- [ ] Mobile Expo iniciado. Base TypeScript creada; instalacion Expo pendiente por bloqueo del instalador local.
+- [x] Mobile Expo iniciado para Android/iPhone.
 - [x] Edge y worker iniciados.
 - [x] Pruebas base creadas.
 - [x] Formatter, lint, typecheck, test y build ejecutados.
@@ -45,7 +45,8 @@
 - Hardware, SDKs y credenciales de fabricantes: no disponibles todavia.
 - Dominio, proveedor de email, push, cuentas Google Play/App Store: no configurados todavia.
 - Revision legal de privacidad/biometria: pendiente antes de produccion.
-- Instalacion completa de dependencias Expo/React Native: pendiente. La Fase 0 conserva base TypeScript mobile; Expo real debe reincorporarse antes de validar Fase 3.
+- Builds firmados Android/iPhone: pendientes de cuentas Google Play/App Store, certificados y pipeline EAS/Xcode.
+- Push mobile, camara/biometria y permisos runtime: pendientes para Fase 3.
 - Docker local: no instalado en esta maquina; falta aplicar migraciones contra PostgreSQL local.
 
 ## Fase 1 checklist
@@ -63,7 +64,10 @@
 - [x] Auditoria inicial de bootstrap, activacion, login y reset.
 - [x] UI web para login, activacion y recuperacion.
 - [x] UI web para configurar MFA administrativo.
-- [ ] UI mobile para login/activacion.
+- [x] UI mobile para login/activacion.
+- [x] UI mobile para reset de password.
+- [x] Sesion mobile persistida en secure storage.
+- [x] Dashboard mobile inicial de acceso, perfil y edificios.
 
 ## Fase 2 checklist
 

@@ -6,11 +6,16 @@
     "version": "0.0.0",
     "orientation": "portrait",
     "platforms": ["ios", "android"],
+    "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.gzit.gzaccess"
+      "bundleIdentifier": "com.gzit.gzaccess",
+      "supportsTablet": false
     },
     "android": {
-      "package": "com.gzit.gzaccess"
+      "package": "com.gzit.gzaccess",
+      "adaptiveIcon": {
+        "backgroundColor": "#18211f"
+      }
     },
     "extra": {
       "apiBaseUrl": "http://localhost:4000/api/v1"

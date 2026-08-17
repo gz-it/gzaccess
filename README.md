@@ -26,6 +26,20 @@ pnpm test
 pnpm build
 ```
 
+## App mobile
+
+La app Android/iPhone vive en `apps/mobile` y usa Expo.
+
+```powershell
+pnpm --filter @gzaccess/mobile start
+pnpm --filter @gzaccess/mobile android
+pnpm --filter @gzaccess/mobile ios
+```
+
+Para conectar contra otra API en desarrollo, definir `EXPO_PUBLIC_API_BASE_URL`, por ejemplo `http://192.168.1.50:4000/api/v1`.
+
+Los perfiles EAS para builds internos y produccion estan en `apps/mobile/eas.json`. La generacion firmada requiere cuentas y certificados de Apple/Google.
+
 ## Apps y paquetes
 
 - `apps/api`: API REST Fastify bajo `/api/v1`.

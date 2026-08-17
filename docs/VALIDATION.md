@@ -321,3 +321,34 @@ Limitaciones:
 - No hay envio real hasta configurar VPS y proveedor SMTP/API de email.
 - El outbox contiene links de activacion sensibles; no deben registrarse en logs y deben consumirse/limpiarse con TTL cuando exista worker real.
 - La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
+
+## 2026-08-16 - Fase 1 app mobile Android/iPhone
+
+Comandos ejecutados:
+
+- `pnpm install --no-frozen-lockfile --config.strict-ssl=false`: paso despues de agregar dependencias Expo/React Native.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local despues de recrear `node_modules`.
+- `tsc -p apps/mobile/tsconfig.json`: paso para app mobile.
+- `prettier --write ...`: paso con binario local para archivos mobile y documentacion.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 22 tests.
+- `tsc -p ...`: paso para packages y apps principales, incluyendo mobile.
+- `vite build`: paso desde `apps/web`.
+- `expo config --type public`: paso con `EXPO_NO_TELEMETRY=1`.
+- `expo export --platform all --output-dir dist-export`: paso con bundles Android e iOS.
+
+Alcance validado:
+
+- App Expo configurada para iOS y Android con identificadores `com.gzit.gzaccess`.
+- Pantallas mobile de login, activacion de cuenta y solicitud de reset.
+- Integracion mobile contra `/auth/login`, `/auth/activation/complete`, `/auth/password-reset/request`, `/auth/me` y listado de edificios.
+- Persistencia de access/refresh token con `expo-secure-store`.
+- Dashboard mobile inicial con secciones Acceso, Perfil y Edificio.
+- Bundle local generado para Android e iOS con Metro.
+- Perfiles EAS preparados para builds internos y produccion.
+
+Limitaciones:
+
+- No se genero APK/IPA firmado porque faltan cuentas, certificados y pipeline de build.
+- La credencial QR, rostro, vehiculos, push y permisos runtime quedan pendientes para Fase 3 y fases de permisos/sincronizacion.
+- En emuladores/dispositivos reales se debe configurar `EXPO_PUBLIC_API_BASE_URL` apuntando al host accesible de la API; `localhost` solo sirve en ciertos entornos de desarrollo.
