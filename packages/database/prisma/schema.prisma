@@ -395,6 +395,24 @@ model AccessEvent {
   @@index([buildingId])
 }
 
+model EmailOutbox {
+  id             String    @id @default(uuid())
+  organizationId String
+  buildingId     String
+  recipientEmail String
+  subject        String
+  template       String
+  payload        Json
+  status         String    @default("QUEUED")
+  createdAt      DateTime  @default(now())
+  sentAt         DateTime?
+  safeError      String?
+
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([status, createdAt])
+}
+
 model AuditLog {
   id             String   @id @default(uuid())
   organizationId String?

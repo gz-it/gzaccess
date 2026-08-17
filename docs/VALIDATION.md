@@ -295,3 +295,29 @@ Limitaciones:
 
 - El secreto TOTP queda persistido para verificacion. Antes de produccion conviene cifrar ese campo con KMS o secreto de aplicacion dedicado.
 - La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
+
+## 2026-08-16 - Fase 2 outbox de invitaciones
+
+Comandos ejecutados:
+
+- `prisma format --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 22 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+
+Alcance validado:
+
+- Registro individual de residente con email deja una invitacion en `EmailOutbox`.
+- Importacion de residentes deja invitaciones en cola para las filas con email.
+- API protegida para consultar invitaciones por edificio.
+- Panel web muestra invitaciones en cola del edificio activo.
+- Migracion incremental SQL preparada para crear `EmailOutbox`.
+
+Limitaciones:
+
+- No hay envio real hasta configurar VPS y proveedor SMTP/API de email.
+- El outbox contiene links de activacion sensibles; no deben registrarse en logs y deben consumirse/limpiarse con TTL cuando exista worker real.
+- La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.

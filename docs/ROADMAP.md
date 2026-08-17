@@ -77,6 +77,7 @@
 - [x] Bloqueo probado contra acceso cruzado entre organizaciones.
 - [x] Pisos completos para asociar unidades.
 - [x] Cocheras base completas para asociar a edificio, piso y unidad.
+- [x] Outbox local de invitaciones por email para residentes.
 - [ ] Invitacion real por email para residentes.
 - [x] Importacion validada de residentes.
 - [x] Panel web inicial de administracion de edificios, unidades y residentes.

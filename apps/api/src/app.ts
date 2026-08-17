@@ -18,10 +18,16 @@ import {
   registerBuildingRoutes,
   type BuildingStore,
 } from "./buildings.js";
+import {
+  InMemoryEmailOutboxStore,
+  PrismaEmailOutboxStore,
+  type EmailOutboxStore,
+} from "./email.js";
 
 export function buildApp(options?: {
   authStore?: AuthStore;
   buildingStore?: BuildingStore;
+  emailOutboxStore?: EmailOutboxStore;
 }) {
   const app = Fastify({
     logger: {
@@ -31,6 +37,7 @@ export function buildApp(options?: {
         "password",
         "token",
         "secret",
+        "payload.activationLink",
         "biometricTemplate",
       ],
     },
@@ -44,6 +51,7 @@ export function buildApp(options?: {
     app,
     authStore,
     options?.buildingStore ?? createDefaultBuildingStore(),
+    options?.emailOutboxStore ?? createDefaultEmailOutboxStore(),
   );
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AuthError) {
@@ -86,4 +94,10 @@ function createDefaultBuildingStore(): BuildingStore {
   return process.env.NODE_ENV === "test"
     ? new InMemoryBuildingStore()
     : new PrismaBuildingStore();
+}
+
+function createDefaultEmailOutboxStore(): EmailOutboxStore {
+  return process.env.NODE_ENV === "test"
+    ? new InMemoryEmailOutboxStore()
+    : new PrismaEmailOutboxStore();
 }

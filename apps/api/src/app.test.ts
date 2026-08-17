@@ -397,6 +397,25 @@ describe("building administration", () => {
       personId: expect.any(String),
       userId: expect.any(String),
       activationToken: expect.any(String),
+      emailId: expect.any(String),
+    });
+
+    const emailOutbox = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/email-outbox`,
+      headers: authHeaders(accessToken),
+    });
+    expect(emailOutbox.statusCode).toBe(200);
+    expect(emailOutbox.json()).toMatchObject({
+      emails: [
+        {
+          buildingId,
+          recipientEmail: "ada@example.test",
+          subject: "Activa tu acceso a GzAccess",
+          template: "resident_activation",
+          status: "QUEUED",
+        },
+      ],
     });
 
     const listedResidents = await app.inject({
@@ -615,10 +634,26 @@ describe("building administration", () => {
       importedCount: 2,
       failedCount: 0,
       imported: [
-        { personId: expect.any(String), activationToken: expect.any(String) },
+        {
+          personId: expect.any(String),
+          activationToken: expect.any(String),
+          emailId: expect.any(String),
+        },
         { personId: expect.any(String) },
       ],
     });
+
+    const emailOutbox = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/email-outbox`,
+      headers: authHeaders(accessToken),
+    });
+    expect(emailOutbox.statusCode).toBe(200);
+    expect(
+      emailOutbox
+        .json<{ emails: Array<{ recipientEmail: string }> }>()
+        .emails.map((email) => ({ recipientEmail: email.recipientEmail })),
+    ).toEqual([{ recipientEmail: "grace@example.test" }]);
 
     const listedResidents = await app.inject({
       method: "GET",

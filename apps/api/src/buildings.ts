@@ -8,6 +8,7 @@ import {
 import type { AuthenticatedUser } from "@gzaccess/contracts";
 import { prisma, type PrismaClient } from "@gzaccess/database";
 import { AuthError, getAuthenticatedUser, type AuthStore } from "./auth.js";
+import type { EmailOutboxStore } from "./email.js";
 
 export interface BuildingSummary {
   id: string;
@@ -46,9 +47,12 @@ export interface ParkingSpaceSummary {
 }
 
 export interface ResidentInvite {
+  organizationId: string;
+  buildingId: string;
   personId: string;
   userId?: string;
   activationToken?: string;
+  emailId?: string;
 }
 
 export interface ResidentSummary {
@@ -286,7 +290,11 @@ export class InMemoryBuildingStore implements BuildingStore {
     });
 
     if (!input.email) {
-      return { personId };
+      return {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        personId,
+      };
     }
 
     const userId = createId("usr");
@@ -297,7 +305,13 @@ export class InMemoryBuildingStore implements BuildingStore {
       displayName: `${input.firstName} ${input.lastName}`,
     });
 
-    return { personId, userId, activationToken };
+    return {
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      personId,
+      userId,
+      activationToken,
+    };
   }
 
   async listResidents(user: AuthenticatedUser, buildingId: string) {
@@ -594,7 +608,11 @@ export class PrismaBuildingStore implements BuildingStore {
       });
 
       if (!input.email) {
-        return { personId: person.id };
+        return {
+          organizationId: building.organizationId,
+          buildingId: building.id,
+          personId: person.id,
+        };
       }
 
       const residentUser = await transaction.user.create({
@@ -628,6 +646,8 @@ export class PrismaBuildingStore implements BuildingStore {
 
       return {
         personId: person.id,
+        organizationId: building.organizationId,
+        buildingId: building.id,
         userId: residentUser.id,
         activationToken,
       };
@@ -733,6 +753,7 @@ export async function registerBuildingRoutes(
   app: FastifyInstance,
   authStore: AuthStore,
   buildingStore: BuildingStore,
+  emailOutboxStore: EmailOutboxStore,
 ) {
   app.post("/api/v1/buildings", async (request) => {
     const user = await requireAuthenticated(authStore, request);
@@ -796,13 +817,14 @@ export async function registerBuildingRoutes(
   app.post("/api/v1/residents", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const input = registerResidentSchema.parse(request.body);
-    return buildingStore.registerResident(user, input);
+    const invite = await buildingStore.registerResident(user, input);
+    return queueResidentActivationEmail(emailOutboxStore, invite, input);
   });
 
   app.post("/api/v1/residents/import", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const input = importResidentsSchema.parse(request.body);
-    return importResidents(user, buildingStore, input);
+    return importResidents(user, buildingStore, emailOutboxStore, input);
   });
 
   app.get("/api/v1/buildings/:buildingId/residents", async (request) => {
@@ -812,11 +834,21 @@ export async function registerBuildingRoutes(
       .parse(request.params);
     return buildingStore.listResidents(user, params.buildingId);
   });
+
+  app.get("/api/v1/buildings/:buildingId/email-outbox", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    await buildingStore.listResidents(user, params.buildingId);
+    return emailOutboxStore.listBuildingOutbox(user, params.buildingId);
+  });
 }
 
 async function importResidents(
   user: AuthenticatedUser,
   buildingStore: BuildingStore,
+  emailOutboxStore: EmailOutboxStore,
   input: ImportResidentsInput,
 ) {
   const imported: ResidentInvite[] = [];
@@ -824,11 +856,12 @@ async function importResidents(
 
   for (const [index, resident] of input.residents.entries()) {
     try {
+      const invite = await buildingStore.registerResident(user, {
+        ...resident,
+        buildingId: input.buildingId,
+      });
       imported.push(
-        await buildingStore.registerResident(user, {
-          ...resident,
-          buildingId: input.buildingId,
-        }),
+        await queueResidentActivationEmail(emailOutboxStore, invite, resident),
       );
     } catch (error) {
       failed.push({
@@ -844,6 +877,26 @@ async function importResidents(
     imported,
     failed,
   };
+}
+
+async function queueResidentActivationEmail(
+  emailOutboxStore: EmailOutboxStore,
+  invite: ResidentInvite,
+  resident: Pick<RegisterResidentInput, "firstName" | "lastName" | "email">,
+): Promise<ResidentInvite> {
+  if (!invite.activationToken || !resident.email) {
+    return invite;
+  }
+
+  const queued = await emailOutboxStore.queueResidentActivation({
+    organizationId: invite.organizationId,
+    buildingId: invite.buildingId,
+    recipientEmail: resident.email,
+    displayName: `${resident.firstName} ${resident.lastName}`,
+    activationToken: invite.activationToken,
+  });
+
+  return { ...invite, emailId: queued.emailId };
 }
 
 async function requireAuthenticated(

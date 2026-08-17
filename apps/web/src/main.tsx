@@ -63,6 +63,16 @@ interface Resident {
   documentNumber?: string | null;
 }
 
+interface EmailOutboxItem {
+  id: string;
+  buildingId: string;
+  recipientEmail: string;
+  subject: string;
+  template: string;
+  status: string;
+  createdAt: string;
+}
+
 const apiBaseUrl = "/api/v1";
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
@@ -75,6 +85,7 @@ function App() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [parkingSpaces, setParkingSpaces] = useState<ParkingSpace[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [emailOutbox, setEmailOutbox] = useState<EmailOutboxItem[]>([]);
   const [mfaSetup, setMfaSetup] = useState<
     { secret: string; otpauthUrl: string } | undefined
   >();
@@ -98,6 +109,7 @@ function App() {
       setUnits([]);
       setParkingSpaces([]);
       setResidents([]);
+      setEmailOutbox([]);
       setSelectedBuildingId("");
       return;
     }
@@ -116,6 +128,7 @@ function App() {
       setUnits([]);
       setParkingSpaces([]);
       setResidents([]);
+      setEmailOutbox([]);
       return;
     }
 
@@ -123,6 +136,7 @@ function App() {
     void loadUnits(selectedBuildingId, setUnits, setStatus);
     void loadParkingSpaces(selectedBuildingId, setParkingSpaces, setStatus);
     void loadResidents(selectedBuildingId, setResidents, setStatus);
+    void loadEmailOutbox(selectedBuildingId, setEmailOutbox, setStatus);
   }, [selectedBuildingId]);
 
   const navLabel = useMemo(() => {
@@ -234,6 +248,7 @@ function App() {
     setUnits([]);
     setParkingSpaces([]);
     setResidents([]);
+    setEmailOutbox([]);
     setMfaSetup(undefined);
     setSelectedBuildingId("");
     setStatus("");
@@ -404,6 +419,7 @@ function App() {
         residents,
       });
       await loadResidents(selectedBuildingId, setResidents, setStatus);
+      await loadEmailOutbox(selectedBuildingId, setEmailOutbox, setStatus);
       setStatus(
         `Importados ${response.importedCount}; fallidos ${response.failedCount}`,
       );
@@ -489,6 +505,7 @@ function App() {
       const response = await apiPostWithAuth<{
         personId: string;
         activationToken?: string;
+        emailId?: string;
       }>("/residents", {
         buildingId,
         unitId: String(form.get("unitId") || "") || undefined,
@@ -499,7 +516,12 @@ function App() {
         phone: String(form.get("phone") || "") || undefined,
       });
       await loadResidents(buildingId, setResidents, setStatus);
-      setStatus(response.activationToken ?? `Residente ${response.personId}`);
+      await loadEmailOutbox(buildingId, setEmailOutbox, setStatus);
+      setStatus(
+        response.emailId
+          ? `Invitacion en cola ${response.emailId}`
+          : (response.activationToken ?? `Residente ${response.personId}`),
+      );
       event.currentTarget.reset();
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -701,6 +723,10 @@ function App() {
 
               <Panel title="Poblacion">
                 <ResidentList residents={residents} />
+              </Panel>
+
+              <Panel title="Invitaciones">
+                <EmailOutboxList emails={emailOutbox} />
               </Panel>
             </section>
           </div>
@@ -980,6 +1006,26 @@ function ResidentList({ residents }: { residents: Resident[] }) {
   );
 }
 
+function EmailOutboxList({ emails }: { emails: EmailOutboxItem[] }) {
+  if (emails.length === 0) {
+    return <p className="empty-state">Sin invitaciones en cola</p>;
+  }
+
+  return (
+    <div className="resident-list">
+      {emails.map((email) => (
+        <article className="resident-row" key={email.id}>
+          <div>
+            <strong>{email.recipientEmail}</strong>
+            <span>{email.subject}</span>
+          </div>
+          <p>{email.status}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function ParkingSpaceList({
   parkingSpaces,
 }: {
@@ -1121,6 +1167,27 @@ async function loadResidents(
       accessToken,
     );
     setResidents(response.residents);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadEmailOutbox(
+  buildingId: string,
+  setEmailOutbox: (emails: EmailOutboxItem[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ emails: EmailOutboxItem[] }>(
+      `/buildings/${buildingId}/email-outbox`,
+      accessToken,
+    );
+    setEmailOutbox(response.emails);
   } catch (error) {
     setStatus(getErrorMessage(error));
   }
