@@ -377,6 +377,31 @@ Limitaciones:
 
 - Todavia no se sincronizan patentes con dispositivos edge ni hardware real.
 
+## 2026-08-17 - Fase 3 consentimiento y captura facial mobile
+
+Comandos ejecutados:
+
+- `pnpm --filter @gzaccess/mobile add expo-image-picker@~16.0.6 --config.strict-ssl=false`: paso.
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `tsc -p ...`: paso para packages y apps principales.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 24 tests.
+- `vite build`: paso desde `apps/web`.
+- `expo export --platform all --output-dir dist-export`: paso con bundles Android e iOS.
+
+Alcance validado:
+
+- App mobile Android/iPhone incorpora pestaña `Rostro`.
+- Consentimiento biometrico local persistido en secure storage por usuario.
+- Captura de imagen facial con camara mediante `expo-image-picker`.
+- Preview y eliminacion local de la imagen capturada.
+- Permisos nativos configurados para camara/fotos en Expo.
+
+Limitaciones:
+
+- La imagen queda solo como referencia local hasta tener storage real y endpoint seguro de carga.
+- No se genera ni almacena template biometrico; eso queda pendiente de proveedor/SDK y revision legal.
+
 ## 2026-08-17 - Fase 3 perfil residencial mobile
 
 Comandos ejecutados:

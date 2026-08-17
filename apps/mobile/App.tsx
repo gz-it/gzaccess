@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as ImagePicker from "expo-image-picker";
 import {
   activateAccount,
   createVehicle,
@@ -25,10 +27,12 @@ import {
 import type { Building, Resident, Tokens, User, Vehicle } from "./src/types";
 
 type AuthMode = "login" | "activation" | "reset";
-type HomeTab = "access" | "profile" | "building" | "vehicles";
+type HomeTab = "access" | "profile" | "building" | "face" | "vehicles";
 
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
+const faceConsentKeyPrefix = "gzaccess.faceConsentAcceptedAt";
+const faceImageUriKeyPrefix = "gzaccess.faceImageUri";
 
 export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -38,6 +42,8 @@ export default function App() {
   const [residents, setResidents] = useState<Resident[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
+  const [faceConsentAcceptedAt, setFaceConsentAcceptedAt] = useState("");
+  const [faceImageUri, setFaceImageUri] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(true);
 
@@ -57,6 +63,7 @@ export default function App() {
 
       const response = await getCurrentUser(token);
       setUser(response.user);
+      await restoreFaceState(response.user.id);
       await loadBuildingData(token, response.user);
     } catch {
       await clearStoredSession();
@@ -69,7 +76,17 @@ export default function App() {
     await SecureStore.setItemAsync(accessTokenKey, tokens.accessToken);
     await SecureStore.setItemAsync(refreshTokenKey, tokens.refreshToken);
     setUser(nextUser);
+    await restoreFaceState(nextUser.id);
     await loadBuildingData(tokens.accessToken, nextUser);
+  }
+
+  async function restoreFaceState(userId: string) {
+    const [acceptedAt, imageUri] = await Promise.all([
+      SecureStore.getItemAsync(getFaceConsentKey(userId)),
+      SecureStore.getItemAsync(getFaceImageUriKey(userId)),
+    ]);
+    setFaceConsentAcceptedAt(acceptedAt ?? "");
+    setFaceImageUri(imageUri ?? "");
   }
 
   async function loadBuildingData(accessToken: string, nextUser: User) {
@@ -154,6 +171,62 @@ export default function App() {
     });
   }
 
+  async function acceptFaceConsent() {
+    await runAction(async () => {
+      if (!user) {
+        throw new Error("UNAUTHENTICATED");
+      }
+      const acceptedAt = new Date().toISOString();
+      await SecureStore.setItemAsync(getFaceConsentKey(user.id), acceptedAt);
+      setFaceConsentAcceptedAt(acceptedAt);
+      setStatus("Consentimiento registrado");
+    });
+  }
+
+  async function captureFace() {
+    await runAction(async () => {
+      if (!faceConsentAcceptedAt) {
+        throw new Error("FACE_CONSENT_REQUIRED");
+      }
+      if (!user) {
+        throw new Error("UNAUTHENTICATED");
+      }
+
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error("CAMERA_PERMISSION_DENIED");
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        mediaTypes: ["images"],
+        quality: 0.85,
+      });
+      if (result.canceled || !result.assets[0]?.uri) {
+        return;
+      }
+
+      await SecureStore.setItemAsync(
+        getFaceImageUriKey(user.id),
+        result.assets[0].uri,
+      );
+      setFaceImageUri(result.assets[0].uri);
+      setStatus("Rostro guardado localmente");
+    });
+  }
+
+  async function clearFace() {
+    await runAction(async () => {
+      if (!user) {
+        throw new Error("UNAUTHENTICATED");
+      }
+      await SecureStore.deleteItemAsync(getFaceImageUriKey(user.id));
+      setFaceImageUri("");
+      setStatus("Rostro local eliminado");
+    });
+  }
+
   async function logout() {
     await clearStoredSession();
     setUser(undefined);
@@ -161,6 +234,8 @@ export default function App() {
     setResidents([]);
     setVehicles([]);
     setSelectedBuildingId("");
+    setFaceConsentAcceptedAt("");
+    setFaceImageUri("");
     setStatus("");
   }
 
@@ -201,6 +276,11 @@ export default function App() {
           status={status}
           user={user}
           vehicles={vehicles}
+          faceConsentAcceptedAt={faceConsentAcceptedAt}
+          faceImageUri={faceImageUri}
+          onFaceCapture={captureFace}
+          onFaceClear={clearFace}
+          onFaceConsent={acceptFaceConsent}
           onLogout={logout}
           onVehicleSubmit={submitVehicle}
         />
@@ -347,7 +427,12 @@ function AuthenticatedApp({
   busy,
   homeTab,
   onLogout,
+  onFaceCapture,
+  onFaceClear,
+  onFaceConsent,
   onVehicleSubmit,
+  faceConsentAcceptedAt,
+  faceImageUri,
   primaryRole,
   residents,
   selectedBuildingId,
@@ -359,6 +444,11 @@ function AuthenticatedApp({
   buildings: Building[];
   busy: boolean;
   homeTab: HomeTab;
+  faceConsentAcceptedAt: string;
+  faceImageUri: string;
+  onFaceCapture: () => Promise<void>;
+  onFaceClear: () => Promise<void>;
+  onFaceConsent: () => Promise<void>;
   onLogout: () => Promise<void>;
   onVehicleSubmit: (input: {
     plate: string;
@@ -406,6 +496,11 @@ function AuthenticatedApp({
           onPress={() => setHomeTab("building")}
         />
         <TabButton
+          active={homeTab === "face"}
+          label="Rostro"
+          onPress={() => setHomeTab("face")}
+        />
+        <TabButton
           active={homeTab === "vehicles"}
           label="Vehiculos"
           onPress={() => setHomeTab("vehicles")}
@@ -419,6 +514,16 @@ function AuthenticatedApp({
         {homeTab === "profile" ? <ProfilePanel user={user} /> : null}
         {homeTab === "building" ? (
           <BuildingPanel buildings={buildings} user={user} />
+        ) : null}
+        {homeTab === "face" ? (
+          <FacePanel
+            busy={busy}
+            consentAcceptedAt={faceConsentAcceptedAt}
+            imageUri={faceImageUri}
+            onCapture={onFaceCapture}
+            onClear={onFaceClear}
+            onConsent={onFaceConsent}
+          />
         ) : null}
         {homeTab === "vehicles" ? (
           <VehiclePanel
@@ -461,7 +566,7 @@ function ProfilePanel({ user }: { user: User }) {
         value={String(user.organizationIds.length)}
       />
       <View style={styles.moduleGrid}>
-        <ModuleTile label="Rostro" state="Fase 3" />
+        <ModuleTile label="Rostro" state="Local" />
         <ModuleTile label="Vehiculos" state="API base" />
         <ModuleTile label="Notificaciones" state="Push pendiente" />
       </View>
@@ -492,6 +597,68 @@ function BuildingPanel({
         ))
       )}
       <Text style={styles.caption}>{user.organizationIds.join(", ")}</Text>
+    </View>
+  );
+}
+
+function FacePanel({
+  busy,
+  consentAcceptedAt,
+  imageUri,
+  onCapture,
+  onClear,
+  onConsent,
+}: {
+  busy: boolean;
+  consentAcceptedAt: string;
+  imageUri: string;
+  onCapture: () => Promise<void>;
+  onClear: () => Promise<void>;
+  onConsent: () => Promise<void>;
+}) {
+  return (
+    <View style={styles.panel}>
+      <Text style={styles.panelTitle}>Rostro</Text>
+      {consentAcceptedAt ? (
+        <Text style={styles.panelBody}>
+          Consentimiento registrado el {formatDate(consentAcceptedAt)}.
+        </Text>
+      ) : (
+        <Text style={styles.panelBody}>
+          Para habilitar credenciales faciales hace falta aceptar el tratamiento
+          biometrico.
+        </Text>
+      )}
+
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.facePreview} />
+      ) : (
+        <View style={styles.facePlaceholder}>
+          <Text style={styles.facePlaceholderText}>Sin rostro</Text>
+        </View>
+      )}
+
+      <View style={styles.form}>
+        {consentAcceptedAt ? null : (
+          <PrimaryButton
+            busy={busy}
+            label="Aceptar consentimiento"
+            onPress={onConsent}
+          />
+        )}
+        <PrimaryButton
+          busy={busy || !consentAcceptedAt}
+          label={imageUri ? "Actualizar rostro" : "Capturar rostro"}
+          onPress={onCapture}
+        />
+        {imageUri ? (
+          <SecondaryButton
+            busy={busy}
+            label="Eliminar local"
+            onPress={onClear}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -617,6 +784,24 @@ function PrimaryButton({
   );
 }
 
+function SecondaryButton({
+  busy,
+  label,
+  onPress,
+}: {
+  busy: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable disabled={busy} style={styles.secondaryButton} onPress={onPress}>
+      <Text style={styles.secondaryButtonText}>
+        {busy ? "Procesando" : label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function SegmentButton({
   active,
   label,
@@ -711,6 +896,21 @@ function getErrorMessage(error: unknown): string {
   return apiError.code ?? (error instanceof Error ? error.message : "ERROR");
 }
 
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function getFaceConsentKey(userId: string): string {
+  return `${faceConsentKeyPrefix}.${userId}`;
+}
+
+function getFaceImageUriKey(userId: string): string {
+  return `${faceImageUriKeyPrefix}.${userId}`;
+}
+
 const styles = StyleSheet.create({
   appContent: {
     backgroundColor: "#eef1ee",
@@ -770,6 +970,31 @@ const styles = StyleSheet.create({
   },
   field: {
     gap: 6,
+  },
+  facePlaceholder: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "#eef1ee",
+    borderColor: "#c7d0ca",
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 192,
+    justifyContent: "center",
+    marginVertical: 12,
+    width: 192,
+  },
+  facePlaceholderText: {
+    color: "#6b7280",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  facePreview: {
+    alignSelf: "center",
+    backgroundColor: "#eef1ee",
+    borderRadius: 8,
+    height: 192,
+    marginVertical: 12,
+    width: 192,
   },
   form: {
     gap: 14,
@@ -911,6 +1136,20 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: "#eef1ee",
     flex: 1,
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: "#eef1ee",
+    borderColor: "#c7d0ca",
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 48,
+    justifyContent: "center",
+  },
+  secondaryButtonText: {
+    color: "#18211f",
+    fontSize: 16,
+    fontWeight: "800",
   },
   segmented: {
     backgroundColor: "#d9dfdb",

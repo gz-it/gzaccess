@@ -100,6 +100,6 @@
 - [x] Panel web para cargar y listar vehiculos.
 - [x] App mobile para autogestion de vehiculos.
 - [x] API mobile de perfil residencial propio.
-- [ ] Captura de rostro y consentimiento biometrico.
+- [x] Captura de rostro y consentimiento biometrico local en app.
 - [ ] Carga de imagenes/archivos con storage real.
 - [ ] Push mobile.

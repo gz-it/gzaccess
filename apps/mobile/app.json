@@ -17,6 +17,15 @@
         "backgroundColor": "#18211f"
       }
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "GzAccess usa la camara para registrar tu rostro de acceso.",
+          "photosPermission": "GzAccess puede seleccionar una imagen solo para tu credencial de acceso."
+        }
+      ]
+    ],
     "extra": {
       "apiBaseUrl": "http://localhost:4000/api/v1"
     }
