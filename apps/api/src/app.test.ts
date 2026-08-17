@@ -258,6 +258,38 @@ describe("building administration", () => {
       units: [{ id: unitId, label: "4A", buildingId, floorName: "Piso 4" }],
     });
 
+    const parkingSpace = await app.inject({
+      method: "POST",
+      url: "/api/v1/parking-spaces",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        floorId,
+        unitId,
+        label: "Cochera 12",
+      },
+    });
+    expect(parkingSpace.statusCode).toBe(200);
+    const parkingSpaceId = parkingSpace.json<{ parkingSpace: { id: string } }>()
+      .parkingSpace.id;
+
+    const listedParkingSpaces = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/parking-spaces`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listedParkingSpaces.statusCode).toBe(200);
+    expect(listedParkingSpaces.json()).toMatchObject({
+      parkingSpaces: [
+        {
+          id: parkingSpaceId,
+          label: "Cochera 12",
+          floorName: "Piso 4",
+          unitLabel: "4A",
+        },
+      ],
+    });
+
     const resident = await app.inject({
       method: "POST",
       url: "/api/v1/residents",
@@ -400,6 +432,35 @@ describe("building administration", () => {
     const response = await app.inject({
       method: "GET",
       url: `/api/v1/buildings/${buildingId}/residents`,
+      headers: authHeaders(adminB.accessToken),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+
+  it("blocks cross-organization parking listing", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "parking-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "parking-b@gzit.test");
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminA.organizationId,
+        name: "Torre Cocheras",
+        address: "Calle Cuatro 400",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/parking-spaces`,
       headers: authHeaders(adminB.accessToken),
     });
 

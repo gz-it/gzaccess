@@ -34,6 +34,17 @@ export interface FloorSummary {
   sortOrder: number;
 }
 
+export interface ParkingSpaceSummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  floorId?: string | null;
+  floorName?: string | null;
+  unitId?: string | null;
+  unitLabel?: string | null;
+  label: string;
+}
+
 export interface ResidentInvite {
   personId: string;
   userId?: string;
@@ -75,6 +86,14 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ floors: FloorSummary[] }>;
+  createParkingSpace(
+    user: AuthenticatedUser,
+    input: CreateParkingSpaceInput,
+  ): Promise<{ parkingSpace: ParkingSpaceSummary }>;
+  listParkingSpaces(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ parkingSpaces: ParkingSpaceSummary[] }>;
   createUnit(
     user: AuthenticatedUser,
     input: CreateUnitInput,
@@ -91,6 +110,7 @@ export interface BuildingStore {
 
 type CreateBuildingInput = z.infer<typeof createBuildingSchema>;
 type CreateFloorInput = z.infer<typeof createFloorSchema>;
+type CreateParkingSpaceInput = z.infer<typeof createParkingSpaceSchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 
@@ -115,6 +135,7 @@ interface StoredUser {
 export class InMemoryBuildingStore implements BuildingStore {
   private readonly buildings = new Map<string, BuildingSummary>();
   private readonly floors = new Map<string, FloorSummary>();
+  private readonly parkingSpaces = new Map<string, ParkingSpaceSummary>();
   private readonly units = new Map<string, UnitSummary>();
   private readonly persons = new Map<string, StoredPerson>();
   private readonly users = new Map<string, StoredUser>();
@@ -196,6 +217,44 @@ export class InMemoryBuildingStore implements BuildingStore {
       units: [...this.units.values()].filter(
         (unit) => unit.buildingId === buildingId,
       ),
+    };
+  }
+
+  async createParkingSpace(
+    user: AuthenticatedUser,
+    input: CreateParkingSpaceInput,
+  ) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const floor = input.floorId
+      ? this.getFloor(input.floorId, building.id)
+      : undefined;
+    const unit = input.unitId
+      ? this.getUnit(input.unitId, building.id)
+      : undefined;
+    const parkingSpace: ParkingSpaceSummary = {
+      id: createId("prk"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      floorId: floor?.id,
+      floorName: floor?.name,
+      unitId: unit?.id,
+      unitLabel: unit?.label,
+      label: input.label,
+    };
+    this.parkingSpaces.set(parkingSpace.id, parkingSpace);
+
+    return { parkingSpace };
+  }
+
+  async listParkingSpaces(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      parkingSpaces: [...this.parkingSpaces.values()]
+        .filter((parkingSpace) => parkingSpace.buildingId === buildingId)
+        .sort(compareParkingSpaces),
     };
   }
 
@@ -281,6 +340,15 @@ export class InMemoryBuildingStore implements BuildingStore {
     }
 
     return floor;
+  }
+
+  private getUnit(unitId: string, buildingId: string): UnitSummary {
+    const unit = this.units.get(unitId);
+    if (!unit || unit.buildingId !== buildingId) {
+      throw new BuildingError("UNIT_NOT_FOUND", 404);
+    }
+
+    return unit;
   }
 }
 
@@ -400,6 +468,83 @@ export class PrismaBuildingStore implements BuildingStore {
         label: unit.label,
         floorId: unit.floorId,
         floorName: unit.floor?.name,
+      })),
+    };
+  }
+
+  async createParkingSpace(
+    user: AuthenticatedUser,
+    input: CreateParkingSpaceInput,
+  ) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const floor = input.floorId
+      ? await this.client.floor.findUnique({ where: { id: input.floorId } })
+      : undefined;
+    if (input.floorId && (!floor || floor.buildingId !== building.id)) {
+      throw new BuildingError("FLOOR_NOT_FOUND", 404);
+    }
+
+    const unit = input.unitId
+      ? await this.client.unit.findUnique({ where: { id: input.unitId } })
+      : undefined;
+    if (input.unitId && (!unit || unit.buildingId !== building.id)) {
+      throw new BuildingError("UNIT_NOT_FOUND", 404);
+    }
+
+    const parkingSpace = await this.client.parkingSpace.create({
+      data: {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        floorId: floor?.id,
+        unitId: unit?.id,
+        label: input.label,
+      },
+    });
+
+    return {
+      parkingSpace: {
+        ...parkingSpace,
+        floorName: floor?.name,
+        unitLabel: unit?.label,
+      },
+    };
+  }
+
+  async listParkingSpaces(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const parkingSpaces = await this.client.parkingSpace.findMany({
+      include: {
+        floor: true,
+        unit: true,
+      },
+      where: { buildingId },
+      orderBy: { label: "asc" },
+    });
+
+    return {
+      parkingSpaces: parkingSpaces.map((parkingSpace) => ({
+        id: parkingSpace.id,
+        organizationId: parkingSpace.organizationId,
+        buildingId: parkingSpace.buildingId,
+        floorId: parkingSpace.floorId,
+        floorName: parkingSpace.floor?.name,
+        unitId: parkingSpace.unitId,
+        unitLabel: parkingSpace.unit?.label,
+        label: parkingSpace.label,
       })),
     };
   }
@@ -551,6 +696,13 @@ const createFloorSchema = z.object({
   sortOrder: z.number().int().default(0),
 });
 
+const createParkingSpaceSchema = z.object({
+  buildingId: z.string().min(1),
+  floorId: z.string().optional(),
+  unitId: z.string().optional(),
+  label: z.string().min(1),
+});
+
 const createUnitSchema = z.object({
   buildingId: z.string().min(1),
   label: z.string().min(1),
@@ -617,6 +769,20 @@ export async function registerBuildingRoutes(
     return buildingStore.listUnits(user, params.buildingId);
   });
 
+  app.post("/api/v1/parking-spaces", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = createParkingSpaceSchema.parse(request.body);
+    return buildingStore.createParkingSpace(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/parking-spaces", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listParkingSpaces(user, params.buildingId);
+  });
+
   app.post("/api/v1/residents", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const input = registerResidentSchema.parse(request.body);
@@ -661,5 +827,14 @@ function compareFloors(left: FloorSummary, right: FloorSummary) {
     left.sortOrder - right.sortOrder ||
     left.name.localeCompare(right.name) ||
     left.id.localeCompare(right.id)
+  );
+}
+
+function compareParkingSpaces(
+  left: ParkingSpaceSummary,
+  right: ParkingSpaceSummary,
+) {
+  return (
+    left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
   );
 }

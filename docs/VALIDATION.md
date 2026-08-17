@@ -219,4 +219,30 @@ Alcance validado:
 Limitaciones:
 
 - La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
-- Cocheras quedan pendientes como entidad/flujo separado.
+- Cocheras quedan pendientes de asignacion directa a residentes o vehiculos cuando se implemente el modulo de vehiculos.
+
+## 2026-08-16 - Fase 2 cocheras base
+
+Comandos ejecutados:
+
+- `prisma format --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 19 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+
+Alcance validado:
+
+- Modelo `ParkingSpace` agregado con relacion a edificio, piso opcional y unidad opcional.
+- Migracion incremental SQL preparada para crear tabla, indices y claves foraneas.
+- API protegida para crear cocheras.
+- API protegida para listar cocheras por edificio.
+- Bloqueo de acceso cruzado para listado de cocheras.
+- Panel web permite crear cocheras y verlas por edificio.
+
+Limitaciones:
+
+- La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
+- La asociacion de cocheras a vehiculos queda para el modulo de vehiculos de Fase 3.

@@ -41,6 +41,16 @@ interface Floor {
   sortOrder: number;
 }
 
+interface ParkingSpace {
+  id: string;
+  buildingId: string;
+  floorId?: string | null;
+  floorName?: string | null;
+  unitId?: string | null;
+  unitLabel?: string | null;
+  label: string;
+}
+
 interface Resident {
   personId: string;
   buildingId: string;
@@ -63,6 +73,7 @@ function App() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [floors, setFloors] = useState<Floor[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [parkingSpaces, setParkingSpaces] = useState<ParkingSpace[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
   const [status, setStatus] = useState<string>("");
@@ -82,6 +93,7 @@ function App() {
       setBuildings([]);
       setFloors([]);
       setUnits([]);
+      setParkingSpaces([]);
       setResidents([]);
       setSelectedBuildingId("");
       return;
@@ -99,12 +111,14 @@ function App() {
     if (!selectedBuildingId) {
       setFloors([]);
       setUnits([]);
+      setParkingSpaces([]);
       setResidents([]);
       return;
     }
 
     void loadFloors(selectedBuildingId, setFloors, setStatus);
     void loadUnits(selectedBuildingId, setUnits, setStatus);
+    void loadParkingSpaces(selectedBuildingId, setParkingSpaces, setStatus);
     void loadResidents(selectedBuildingId, setResidents, setStatus);
   }, [selectedBuildingId]);
 
@@ -214,6 +228,7 @@ function App() {
     setBuildings([]);
     setFloors([]);
     setUnits([]);
+    setParkingSpaces([]);
     setResidents([]);
     setSelectedBuildingId("");
     setStatus("");
@@ -309,6 +324,41 @@ function App() {
         ),
       );
       setStatus("Piso creado");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitParkingSpace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const buildingId = String(form.get("buildingId") || selectedBuildingId);
+    if (!buildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{
+        parkingSpace: ParkingSpace;
+      }>("/parking-spaces", {
+        buildingId,
+        floorId: String(form.get("floorId") || "") || undefined,
+        unitId: String(form.get("unitId") || "") || undefined,
+        label: String(form.get("label")),
+      });
+      setParkingSpaces((current) =>
+        [...current, response.parkingSpace].sort((left, right) =>
+          left.label.localeCompare(right.label),
+        ),
+      );
+      setStatus("Cochera creada");
       event.currentTarget.reset();
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -485,6 +535,24 @@ function App() {
                   />
                   <Field label="Telefono" name="phone" required={false} />
                 </AdminForm>
+              </Panel>
+
+              <Panel title="Cochera">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Crear cochera"
+                  onSubmit={submitParkingSpace}
+                >
+                  <BuildingSelect
+                    buildings={buildings}
+                    selectedBuildingId={selectedBuildingId}
+                    setSelectedBuildingId={setSelectedBuildingId}
+                  />
+                  <FloorSelect floors={floors} />
+                  <UnitSelect units={units} buildingId={selectedBuildingId} />
+                  <Field label="Etiqueta" name="label" />
+                </AdminForm>
+                <ParkingSpaceList parkingSpaces={parkingSpaces} />
               </Panel>
 
               <Panel title="Poblacion">
@@ -753,6 +821,30 @@ function ResidentList({ residents }: { residents: Resident[] }) {
   );
 }
 
+function ParkingSpaceList({
+  parkingSpaces,
+}: {
+  parkingSpaces: ParkingSpace[];
+}) {
+  if (parkingSpaces.length === 0) {
+    return <p className="empty-state spaced">Sin cocheras cargadas</p>;
+  }
+
+  return (
+    <div className="resident-list spaced">
+      {parkingSpaces.map((parkingSpace) => (
+        <article className="resident-row" key={parkingSpace.id}>
+          <div>
+            <strong>{parkingSpace.label}</strong>
+            <span>{parkingSpace.unitLabel ?? "Sin unidad asociada"}</span>
+          </div>
+          <p>{parkingSpace.floorName ?? "Sin piso"}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 async function loadCurrentUser(
   accessToken: string,
   setUser: (user: User | undefined) => void,
@@ -828,6 +920,27 @@ async function loadFloors(
       accessToken,
     );
     setFloors(response.floors);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadParkingSpaces(
+  buildingId: string,
+  setParkingSpaces: (parkingSpaces: ParkingSpace[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ parkingSpaces: ParkingSpace[] }>(
+      `/buildings/${buildingId}/parking-spaces`,
+      accessToken,
+    );
+    setParkingSpaces(response.parkingSpaces);
   } catch (error) {
     setStatus(getErrorMessage(error));
   }

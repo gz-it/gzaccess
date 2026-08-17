@@ -246,6 +246,10 @@ article p {
   margin: 0;
 }
 
+.spaced {
+  margin-top: 14px;
+}
+
 .resident-list {
   display: grid;
   gap: 10px;

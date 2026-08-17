@@ -140,6 +140,7 @@ model Building {
   organization      Organization         @relation(fields: [organizationId], references: [id])
   floors            Floor[]
   units             Unit[]
+  parkingSpaces     ParkingSpace[]
   zones             Zone[]
   accessPoints      AccessPoint[]
   memberships       BuildingMembership[]
@@ -153,13 +154,14 @@ model Building {
 }
 
 model Floor {
-  id             String   @id @default(uuid())
+  id             String         @id @default(uuid())
   organizationId String
   buildingId     String
   name           String
   sortOrder      Int
-  building       Building @relation(fields: [buildingId], references: [id])
+  building       Building       @relation(fields: [buildingId], references: [id])
   units          Unit[]
+  parkingSpaces  ParkingSpace[]
 
   @@index([organizationId])
   @@index([buildingId])
@@ -174,11 +176,30 @@ model Unit {
   building       Building             @relation(fields: [buildingId], references: [id])
   floor          Floor?               @relation(fields: [floorId], references: [id])
   memberships    BuildingMembership[]
+  parkingSpaces  ParkingSpace[]
 
   @@unique([buildingId, label])
   @@index([organizationId])
   @@index([buildingId])
   @@index([floorId])
+}
+
+model ParkingSpace {
+  id             String   @id @default(uuid())
+  organizationId String
+  buildingId     String
+  floorId        String?
+  unitId         String?
+  label          String
+  building       Building @relation(fields: [buildingId], references: [id])
+  floor          Floor?   @relation(fields: [floorId], references: [id])
+  unit           Unit?    @relation(fields: [unitId], references: [id])
+
+  @@unique([buildingId, label])
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([floorId])
+  @@index([unitId])
 }
 
 model Zone {
