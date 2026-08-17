@@ -217,14 +217,15 @@ model Zone {
 }
 
 model AccessPoint {
-  id             String   @id @default(uuid())
+  id             String         @id @default(uuid())
   organizationId String
   buildingId     String
   zoneId         String?
   name           String
   kind           String
-  building       Building @relation(fields: [buildingId], references: [id])
-  zone           Zone?    @relation(fields: [zoneId], references: [id])
+  building       Building       @relation(fields: [buildingId], references: [id])
+  zone           Zone?          @relation(fields: [zoneId], references: [id])
+  accessPolicies AccessPolicy[]
 
   @@index([organizationId])
   @@index([buildingId])
@@ -246,6 +247,7 @@ model Person {
   memberships    BuildingMembership[]
   credentials    Credential[]
   vehicles       Vehicle[]
+  accessPolicies AccessPolicy[]
 
   @@index([organizationId])
   @@index([email])
@@ -291,6 +293,27 @@ model Vehicle {
   @@index([organizationId])
   @@index([buildingId])
   @@index([personId])
+}
+
+model AccessPolicy {
+  id             String      @id @default(uuid())
+  organizationId String
+  buildingId     String
+  personId       String
+  accessPointId  String
+  active         Boolean     @default(true)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  person         Person      @relation(fields: [personId], references: [id])
+  accessPoint    AccessPoint @relation(fields: [accessPointId], references: [id])
+
+  @@unique([personId, accessPointId])
+  @@index([organizationId])
+  @@index([buildingId])
+  @@index([personId])
+  @@index([accessPointId])
 }
 
 model Credential {

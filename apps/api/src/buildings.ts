@@ -63,6 +63,19 @@ export interface AccessPointSummary {
   kind: string;
 }
 
+export interface AccessPolicySummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  personId: string;
+  residentName: string;
+  accessPointId: string;
+  accessPointName: string;
+  active: boolean;
+  validFrom?: string | null;
+  validUntil?: string | null;
+}
+
 export interface ResidentInvite {
   organizationId: string;
   buildingId: string;
@@ -151,6 +164,14 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ accessPoints: AccessPointSummary[] }>;
+  upsertAccessPolicy(
+    user: AuthenticatedUser,
+    input: UpsertAccessPolicyInput,
+  ): Promise<{ accessPolicy: AccessPolicySummary }>;
+  listAccessPolicies(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ accessPolicies: AccessPolicySummary[] }>;
   createUnit(
     user: AuthenticatedUser,
     input: CreateUnitInput,
@@ -179,6 +200,7 @@ type CreateFloorInput = z.infer<typeof createFloorSchema>;
 type CreateParkingSpaceInput = z.infer<typeof createParkingSpaceSchema>;
 type CreateZoneInput = z.infer<typeof createZoneSchema>;
 type CreateAccessPointInput = z.infer<typeof createAccessPointSchema>;
+type UpsertAccessPolicyInput = z.infer<typeof upsertAccessPolicySchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 type ImportResidentsInput = z.infer<typeof importResidentsSchema>;
@@ -203,11 +225,23 @@ interface StoredUser {
   displayName: string;
 }
 
+interface StoredAccessPolicy {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  personId: string;
+  accessPointId: string;
+  active: boolean;
+  validFrom?: string;
+  validUntil?: string;
+}
+
 export class InMemoryBuildingStore implements BuildingStore {
   private readonly buildings = new Map<string, BuildingSummary>();
   private readonly floors = new Map<string, FloorSummary>();
   private readonly zones = new Map<string, ZoneSummary>();
   private readonly accessPoints = new Map<string, AccessPointSummary>();
+  private readonly accessPolicies = new Map<string, StoredAccessPolicy>();
   private readonly parkingSpaces = new Map<string, ParkingSpaceSummary>();
   private readonly units = new Map<string, UnitSummary>();
   private readonly persons = new Map<string, StoredPerson>();
@@ -391,6 +425,54 @@ export class InMemoryBuildingStore implements BuildingStore {
     };
   }
 
+  async upsertAccessPolicy(
+    user: AuthenticatedUser,
+    input: UpsertAccessPolicyInput,
+  ) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const person = this.getPerson(input.personId, building.id);
+    const accessPoint = this.getAccessPoint(input.accessPointId, building.id);
+    const existing = [...this.accessPolicies.values()].find(
+      (policy) =>
+        policy.personId === person.id &&
+        policy.accessPointId === accessPoint.id,
+    );
+    const policy: StoredAccessPolicy = {
+      id: existing?.id ?? createId("apl"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      personId: person.id,
+      accessPointId: accessPoint.id,
+      active: input.active ?? true,
+      validFrom: input.validFrom,
+      validUntil: input.validUntil,
+    };
+    this.accessPolicies.set(policy.id, policy);
+
+    return {
+      accessPolicy: mapStoredAccessPolicy(policy, person, accessPoint),
+    };
+  }
+
+  async listAccessPolicies(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    const accessPolicies = [...this.accessPolicies.values()]
+      .filter((policy) => policy.buildingId === buildingId)
+      .map((policy) =>
+        mapStoredAccessPolicy(
+          policy,
+          this.getPerson(policy.personId, buildingId),
+          this.getAccessPoint(policy.accessPointId, buildingId),
+        ),
+      )
+      .sort(compareAccessPolicies);
+
+    return { accessPolicies };
+  }
+
   async registerResident(
     user: AuthenticatedUser,
     input: RegisterResidentInput,
@@ -559,6 +641,27 @@ export class InMemoryBuildingStore implements BuildingStore {
     }
 
     return zone;
+  }
+
+  private getAccessPoint(
+    accessPointId: string,
+    buildingId: string,
+  ): AccessPointSummary {
+    const accessPoint = this.accessPoints.get(accessPointId);
+    if (!accessPoint || accessPoint.buildingId !== buildingId) {
+      throw new BuildingError("ACCESS_POINT_NOT_FOUND", 404);
+    }
+
+    return accessPoint;
+  }
+
+  private getPerson(personId: string, buildingId: string): StoredPerson {
+    const person = this.persons.get(personId);
+    if (!person || person.buildingId !== buildingId) {
+      throw new BuildingError("PERSON_NOT_FOUND", 404);
+    }
+
+    return person;
   }
 }
 
@@ -867,6 +970,92 @@ export class PrismaBuildingStore implements BuildingStore {
     };
   }
 
+  async upsertAccessPolicy(
+    user: AuthenticatedUser,
+    input: UpsertAccessPolicyInput,
+  ) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const membership = await this.client.buildingMembership.findFirst({
+      include: { person: true },
+      where: {
+        buildingId: building.id,
+        personId: input.personId,
+        isActive: true,
+        role: "RESIDENT",
+      },
+    });
+    if (!membership) {
+      throw new BuildingError("PERSON_NOT_FOUND", 404);
+    }
+
+    const accessPoint = await this.client.accessPoint.findUnique({
+      where: { id: input.accessPointId },
+    });
+    if (!accessPoint || accessPoint.buildingId !== building.id) {
+      throw new BuildingError("ACCESS_POINT_NOT_FOUND", 404);
+    }
+
+    const accessPolicy = await this.client.accessPolicy.upsert({
+      include: {
+        accessPoint: true,
+        person: true,
+      },
+      where: {
+        personId_accessPointId: {
+          personId: membership.person.id,
+          accessPointId: accessPoint.id,
+        },
+      },
+      create: {
+        organizationId: building.organizationId,
+        buildingId: building.id,
+        personId: membership.person.id,
+        accessPointId: accessPoint.id,
+        active: input.active ?? true,
+        validFrom: input.validFrom ? new Date(input.validFrom) : undefined,
+        validUntil: input.validUntil ? new Date(input.validUntil) : undefined,
+      },
+      update: {
+        active: input.active ?? true,
+        validFrom: input.validFrom ? new Date(input.validFrom) : null,
+        validUntil: input.validUntil ? new Date(input.validUntil) : null,
+      },
+    });
+
+    return { accessPolicy: mapPrismaAccessPolicy(accessPolicy) };
+  }
+
+  async listAccessPolicies(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const accessPolicies = await this.client.accessPolicy.findMany({
+      include: {
+        accessPoint: true,
+        person: true,
+      },
+      where: { buildingId },
+    });
+
+    return {
+      accessPolicies: accessPolicies
+        .map(mapPrismaAccessPolicy)
+        .sort(compareAccessPolicies),
+    };
+  }
+
   async registerResident(
     user: AuthenticatedUser,
     input: RegisterResidentInput,
@@ -1156,6 +1345,25 @@ const createAccessPointSchema = z.object({
   kind: z.enum(["PEDESTRIAN", "GARAGE", "SERVICE", "ELEVATOR"]),
 });
 
+const isoDateTimeSchema = z.string().datetime({ offset: true });
+
+const upsertAccessPolicySchema = z
+  .object({
+    buildingId: z.string().min(1),
+    personId: z.string().min(1),
+    accessPointId: z.string().min(1),
+    active: z.boolean().optional(),
+    validFrom: isoDateTimeSchema.optional(),
+    validUntil: isoDateTimeSchema.optional(),
+  })
+  .refine(
+    (input) =>
+      !input.validFrom ||
+      !input.validUntil ||
+      new Date(input.validFrom) <= new Date(input.validUntil),
+    { message: "validFrom must be before validUntil" },
+  );
+
 const registerResidentSchema = z.object({
   buildingId: z.string().min(1),
   unitId: z.string().optional(),
@@ -1283,6 +1491,20 @@ export async function registerBuildingRoutes(
       .object({ buildingId: z.string().min(1) })
       .parse(request.params);
     return buildingStore.listAccessPoints(user, params.buildingId);
+  });
+
+  app.post("/api/v1/access-policies", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = upsertAccessPolicySchema.parse(request.body);
+    return buildingStore.upsertAccessPolicy(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/access-policies", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listAccessPolicies(user, params.buildingId);
   });
 
   app.post("/api/v1/residents", async (request) => {
@@ -1422,6 +1644,51 @@ function mapStoredResident(
   };
 }
 
+function mapStoredAccessPolicy(
+  policy: StoredAccessPolicy,
+  person: StoredPerson,
+  accessPoint: AccessPointSummary,
+): AccessPolicySummary {
+  return {
+    id: policy.id,
+    organizationId: policy.organizationId,
+    buildingId: policy.buildingId,
+    personId: policy.personId,
+    residentName: `${person.firstName} ${person.lastName}`,
+    accessPointId: policy.accessPointId,
+    accessPointName: accessPoint.name,
+    active: policy.active,
+    validFrom: policy.validFrom,
+    validUntil: policy.validUntil,
+  };
+}
+
+function mapPrismaAccessPolicy(policy: {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  personId: string;
+  accessPointId: string;
+  active: boolean;
+  validFrom: Date | null;
+  validUntil: Date | null;
+  person: { firstName: string; lastName: string };
+  accessPoint: { name: string };
+}): AccessPolicySummary {
+  return {
+    id: policy.id,
+    organizationId: policy.organizationId,
+    buildingId: policy.buildingId,
+    personId: policy.personId,
+    residentName: `${policy.person.firstName} ${policy.person.lastName}`,
+    accessPointId: policy.accessPointId,
+    accessPointName: policy.accessPoint.name,
+    active: policy.active,
+    validFrom: policy.validFrom?.toISOString(),
+    validUntil: policy.validUntil?.toISOString(),
+  };
+}
+
 function compareResidents(left: ResidentSummary, right: ResidentSummary) {
   return (
     left.lastName.localeCompare(right.lastName) ||
@@ -1456,6 +1723,17 @@ function compareAccessPoints(
   right: AccessPointSummary,
 ) {
   return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+}
+
+function compareAccessPolicies(
+  left: AccessPolicySummary,
+  right: AccessPolicySummary,
+) {
+  return (
+    left.residentName.localeCompare(right.residentName) ||
+    left.accessPointName.localeCompare(right.accessPointName) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function compareVehicles(left: VehicleSummary, right: VehicleSummary) {

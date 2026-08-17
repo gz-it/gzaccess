@@ -441,7 +441,32 @@ Alcance validado:
 
 Limitaciones:
 
-- Todavia falta API de politicas de acceso y panel web de configuracion.
+- Todavia falta panel web de configuracion de permisos.
+- Todavia no hay sincronizacion edge ni hardware real.
+
+## 2026-08-17 - Fase 4 API de politicas de acceso
+
+Comandos ejecutados:
+
+- `prisma format --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 4 archivos y 34 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+
+Alcance validado:
+
+- Modelo `AccessPolicy` versionado en Prisma.
+- Migracion incremental SQL preparada para politicas de acceso.
+- API protegida para crear o actualizar politicas por residente y punto de acceso.
+- API protegida para listar politicas por edificio.
+- Validacion de pertenencia al mismo edificio para residente y punto.
+- Bloqueo probado contra acceso cruzado entre organizaciones.
+
+Limitaciones:
+
+- Todavia falta panel web de configuracion de permisos.
 - Todavia no hay sincronizacion edge ni hardware real.
 
 ## 2026-08-17 - Fase 3 perfil residencial mobile

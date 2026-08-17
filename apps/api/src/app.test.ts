@@ -568,6 +568,119 @@ describe("building administration", () => {
     });
   });
 
+  it("creates and updates access policies for residents", async () => {
+    const app = buildApp();
+    const { accessToken, organizationId } = await createActivatedAdmin(
+      app,
+      "policies@gzit.test",
+    );
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(accessToken),
+      payload: {
+        organizationId,
+        name: "Torre Politicas",
+        address: "Politicas 123",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const resident = await app.inject({
+      method: "POST",
+      url: "/api/v1/residents",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        firstName: "Irene",
+        lastName: "Permisos",
+        email: "irene@example.test",
+      },
+    });
+    const personId = resident.json<{ personId: string }>().personId;
+
+    const accessPoint = await app.inject({
+      method: "POST",
+      url: "/api/v1/access-points",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        name: "Garage",
+        kind: "GARAGE",
+      },
+    });
+    const accessPointId = accessPoint.json<{ accessPoint: { id: string } }>()
+      .accessPoint.id;
+
+    const policy = await app.inject({
+      method: "POST",
+      url: "/api/v1/access-policies",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        personId,
+        accessPointId,
+        active: true,
+        validFrom: "2026-08-17T10:00:00.000Z",
+        validUntil: "2026-12-31T23:59:59.000Z",
+      },
+    });
+    expect(policy.statusCode).toBe(200);
+    expect(policy.json()).toMatchObject({
+      accessPolicy: {
+        buildingId,
+        personId,
+        residentName: "Irene Permisos",
+        accessPointId,
+        accessPointName: "Garage",
+        active: true,
+        validFrom: "2026-08-17T10:00:00.000Z",
+        validUntil: "2026-12-31T23:59:59.000Z",
+      },
+    });
+
+    const updated = await app.inject({
+      method: "POST",
+      url: "/api/v1/access-policies",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        personId,
+        accessPointId,
+        active: false,
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      accessPolicy: {
+        personId,
+        accessPointId,
+        active: false,
+      },
+    });
+
+    const listed = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/access-policies`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toMatchObject({
+      accessPolicies: [
+        {
+          personId,
+          residentName: "Irene Permisos",
+          accessPointId,
+          accessPointName: "Garage",
+          active: false,
+        },
+      ],
+    });
+  });
+
   it("returns the resident profile for the authenticated session", async () => {
     const app = buildApp();
     const email = "resident-profile@gzit.test";
@@ -825,6 +938,35 @@ describe("building administration", () => {
     const response = await app.inject({
       method: "GET",
       url: `/api/v1/buildings/${buildingId}/access-points`,
+      headers: authHeaders(adminB.accessToken),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+
+  it("blocks cross-organization access policy listing", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "policies-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "policies-b@gzit.test");
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminA.organizationId,
+        name: "Torre Politicas Cruzadas",
+        address: "Calle Ocho 800",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/access-policies`,
       headers: authHeaders(adminB.accessToken),
     });
 
