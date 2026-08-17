@@ -67,6 +67,22 @@ export interface ResidentSummary {
   documentNumber?: string | null;
 }
 
+export interface VehicleSummary {
+  id: string;
+  organizationId: string;
+  buildingId: string;
+  personId: string;
+  residentName: string;
+  plateOriginal: string;
+  plateNormalized: string;
+  country: string;
+  brand?: string | null;
+  model?: string | null;
+  color?: string | null;
+  type?: string | null;
+  state: string;
+}
+
 export interface BuildingStore {
   createBuilding(
     user: AuthenticatedUser,
@@ -110,6 +126,14 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ residents: ResidentSummary[] }>;
+  createVehicle(
+    user: AuthenticatedUser,
+    input: CreateVehicleInput,
+  ): Promise<{ vehicle: VehicleSummary }>;
+  listVehicles(
+    user: AuthenticatedUser,
+    buildingId: string,
+  ): Promise<{ vehicles: VehicleSummary[] }>;
 }
 
 type CreateBuildingInput = z.infer<typeof createBuildingSchema>;
@@ -118,6 +142,7 @@ type CreateParkingSpaceInput = z.infer<typeof createParkingSpaceSchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
 type ImportResidentsInput = z.infer<typeof importResidentsSchema>;
+type CreateVehicleInput = z.infer<typeof createVehicleSchema>;
 
 interface StoredPerson {
   id: string;
@@ -144,6 +169,7 @@ export class InMemoryBuildingStore implements BuildingStore {
   private readonly units = new Map<string, UnitSummary>();
   private readonly persons = new Map<string, StoredPerson>();
   private readonly users = new Map<string, StoredUser>();
+  private readonly vehicles = new Map<string, VehicleSummary>();
 
   async createBuilding(user: AuthenticatedUser, input: CreateBuildingInput) {
     requireOrganizationAccess(user, input.organizationId);
@@ -337,6 +363,56 @@ export class InMemoryBuildingStore implements BuildingStore {
       .sort(compareResidents);
 
     return { residents };
+  }
+
+  async createVehicle(user: AuthenticatedUser, input: CreateVehicleInput) {
+    const building = this.getBuilding(input.buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+    const person = this.persons.get(input.personId);
+    if (!person || person.buildingId !== building.id) {
+      throw new BuildingError("PERSON_NOT_FOUND", 404);
+    }
+
+    const plateNormalized = normalizePlate(input.plate);
+    if (
+      [...this.vehicles.values()].some(
+        (vehicle) =>
+          vehicle.buildingId === building.id &&
+          vehicle.plateNormalized === plateNormalized,
+      )
+    ) {
+      throw new BuildingError("VEHICLE_PLATE_EXISTS", 409);
+    }
+
+    const vehicle: VehicleSummary = {
+      id: createId("veh"),
+      organizationId: building.organizationId,
+      buildingId: building.id,
+      personId: person.id,
+      residentName: `${person.firstName} ${person.lastName}`,
+      plateOriginal: input.plate,
+      plateNormalized,
+      country: input.country,
+      brand: input.brand,
+      model: input.model,
+      color: input.color,
+      type: input.type,
+      state: "PENDING",
+    };
+    this.vehicles.set(vehicle.id, vehicle);
+
+    return { vehicle };
+  }
+
+  async listVehicles(user: AuthenticatedUser, buildingId: string) {
+    const building = this.getBuilding(buildingId);
+    requireOrganizationAccess(user, building.organizationId);
+
+    return {
+      vehicles: [...this.vehicles.values()]
+        .filter((vehicle) => vehicle.buildingId === buildingId)
+        .sort(compareVehicles),
+    };
   }
 
   private getBuilding(buildingId: string): BuildingSummary {
@@ -693,6 +769,83 @@ export class PrismaBuildingStore implements BuildingStore {
 
     return { residents };
   }
+
+  async createVehicle(user: AuthenticatedUser, input: CreateVehicleInput) {
+    const building = await this.client.building.findUnique({
+      where: { id: input.buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const membership = await this.client.buildingMembership.findFirst({
+      include: { person: true },
+      where: {
+        buildingId: building.id,
+        personId: input.personId,
+        isActive: true,
+        role: "RESIDENT",
+      },
+    });
+    if (!membership) {
+      throw new BuildingError("PERSON_NOT_FOUND", 404);
+    }
+
+    const plateNormalized = normalizePlate(input.plate);
+    try {
+      const vehicle = await this.client.vehicle.create({
+        data: {
+          organizationId: building.organizationId,
+          buildingId: building.id,
+          personId: input.personId,
+          plateOriginal: input.plate,
+          plateNormalized,
+          country: input.country,
+          brand: input.brand,
+          model: input.model,
+          color: input.color,
+          type: input.type,
+        },
+      });
+
+      return {
+        vehicle: {
+          ...vehicle,
+          residentName: `${membership.person.firstName} ${membership.person.lastName}`,
+        },
+      };
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw new BuildingError("VEHICLE_PLATE_EXISTS", 409);
+      }
+
+      throw error;
+    }
+  }
+
+  async listVehicles(user: AuthenticatedUser, buildingId: string) {
+    const building = await this.client.building.findUnique({
+      where: { id: buildingId },
+    });
+    if (!building) {
+      throw new BuildingError("BUILDING_NOT_FOUND", 404);
+    }
+    requireOrganizationAccess(user, building.organizationId);
+
+    const vehicles = await this.client.vehicle.findMany({
+      include: { person: true },
+      where: { buildingId },
+      orderBy: { plateNormalized: "asc" },
+    });
+
+    return {
+      vehicles: vehicles.map((vehicle) => ({
+        ...vehicle,
+        residentName: `${vehicle.person.firstName} ${vehicle.person.lastName}`,
+      })),
+    };
+  }
 }
 
 export class BuildingError extends Error {
@@ -747,6 +900,23 @@ const importResidentRowSchema = registerResidentSchema.omit({
 const importResidentsSchema = z.object({
   buildingId: z.string().min(1),
   residents: z.array(importResidentRowSchema).min(1).max(500),
+});
+
+const createVehicleSchema = z.object({
+  buildingId: z.string().min(1),
+  personId: z.string().min(1),
+  plate: z
+    .string()
+    .min(3)
+    .max(16)
+    .refine((value) => normalizePlate(value).length >= 3, {
+      message: "INVALID_PLATE",
+    }),
+  country: z.string().min(2).default("AR"),
+  brand: z.string().optional(),
+  model: z.string().optional(),
+  color: z.string().optional(),
+  type: z.string().optional(),
 });
 
 export async function registerBuildingRoutes(
@@ -833,6 +1003,20 @@ export async function registerBuildingRoutes(
       .object({ buildingId: z.string().min(1) })
       .parse(request.params);
     return buildingStore.listResidents(user, params.buildingId);
+  });
+
+  app.post("/api/v1/vehicles", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = createVehicleSchema.parse(request.body);
+    return buildingStore.createVehicle(user, input);
+  });
+
+  app.get("/api/v1/buildings/:buildingId/vehicles", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const params = z
+      .object({ buildingId: z.string().min(1) })
+      .parse(request.params);
+    return buildingStore.listVehicles(user, params.buildingId);
   });
 
   app.get("/api/v1/buildings/:buildingId/email-outbox", async (request) => {
@@ -937,5 +1121,25 @@ function compareParkingSpaces(
 ) {
   return (
     left.label.localeCompare(right.label) || left.id.localeCompare(right.id)
+  );
+}
+
+function compareVehicles(left: VehicleSummary, right: VehicleSummary) {
+  return (
+    left.plateNormalized.localeCompare(right.plateNormalized) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function normalizePlate(plate: string): string {
+  return plate.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "P2002"
   );
 }

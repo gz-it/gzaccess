@@ -73,6 +73,21 @@ interface EmailOutboxItem {
   createdAt: string;
 }
 
+interface Vehicle {
+  id: string;
+  buildingId: string;
+  personId: string;
+  residentName: string;
+  plateOriginal: string;
+  plateNormalized: string;
+  country: string;
+  brand?: string | null;
+  model?: string | null;
+  color?: string | null;
+  type?: string | null;
+  state: string;
+}
+
 const apiBaseUrl = "/api/v1";
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
@@ -86,6 +101,7 @@ function App() {
   const [parkingSpaces, setParkingSpaces] = useState<ParkingSpace[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
   const [emailOutbox, setEmailOutbox] = useState<EmailOutboxItem[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [mfaSetup, setMfaSetup] = useState<
     { secret: string; otpauthUrl: string } | undefined
   >();
@@ -110,6 +126,7 @@ function App() {
       setParkingSpaces([]);
       setResidents([]);
       setEmailOutbox([]);
+      setVehicles([]);
       setSelectedBuildingId("");
       return;
     }
@@ -129,6 +146,7 @@ function App() {
       setParkingSpaces([]);
       setResidents([]);
       setEmailOutbox([]);
+      setVehicles([]);
       return;
     }
 
@@ -137,6 +155,7 @@ function App() {
     void loadParkingSpaces(selectedBuildingId, setParkingSpaces, setStatus);
     void loadResidents(selectedBuildingId, setResidents, setStatus);
     void loadEmailOutbox(selectedBuildingId, setEmailOutbox, setStatus);
+    void loadVehicles(selectedBuildingId, setVehicles, setStatus);
   }, [selectedBuildingId]);
 
   const navLabel = useMemo(() => {
@@ -249,6 +268,7 @@ function App() {
     setParkingSpaces([]);
     setResidents([]);
     setEmailOutbox([]);
+    setVehicles([]);
     setMfaSetup(undefined);
     setSelectedBuildingId("");
     setStatus("");
@@ -379,6 +399,46 @@ function App() {
         ),
       );
       setStatus("Cochera creada");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitVehicle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const buildingId = String(form.get("buildingId") || selectedBuildingId);
+    if (!buildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{ vehicle: Vehicle }>(
+        "/vehicles",
+        {
+          buildingId,
+          personId: String(form.get("personId")),
+          plate: String(form.get("plate")),
+          country: String(form.get("country") || "AR"),
+          brand: String(form.get("brand") || "") || undefined,
+          model: String(form.get("model") || "") || undefined,
+          color: String(form.get("color") || "") || undefined,
+          type: String(form.get("type") || "") || undefined,
+        },
+      );
+      setVehicles((current) =>
+        [...current, response.vehicle].sort((left, right) =>
+          left.plateNormalized.localeCompare(right.plateNormalized),
+        ),
+      );
+      setStatus("Vehiculo creado");
       event.currentTarget.reset();
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -683,6 +743,37 @@ function App() {
                 <ParkingSpaceList parkingSpaces={parkingSpaces} />
               </Panel>
 
+              <Panel title="Vehiculo">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Crear vehiculo"
+                  onSubmit={submitVehicle}
+                >
+                  <BuildingSelect
+                    buildings={buildings}
+                    selectedBuildingId={selectedBuildingId}
+                    setSelectedBuildingId={setSelectedBuildingId}
+                  />
+                  <ResidentSelect
+                    buildingId={selectedBuildingId}
+                    residents={residents}
+                  />
+                  <div className="split-fields">
+                    <Field label="Patente" name="plate" />
+                    <Field label="Pais" name="country" defaultValue="AR" />
+                  </div>
+                  <div className="split-fields">
+                    <Field label="Marca" name="brand" required={false} />
+                    <Field label="Modelo" name="model" required={false} />
+                  </div>
+                  <div className="split-fields">
+                    <Field label="Color" name="color" required={false} />
+                    <Field label="Tipo" name="type" required={false} />
+                  </div>
+                </AdminForm>
+                <VehicleList vehicles={vehicles} />
+              </Panel>
+
               <Panel title="Importar">
                 <AdminForm
                   busy={busy}
@@ -984,6 +1075,30 @@ function FloorSelect({ floors }: { floors: Floor[] }) {
   );
 }
 
+function ResidentSelect({
+  buildingId,
+  residents,
+}: {
+  buildingId: string;
+  residents: Resident[];
+}) {
+  return (
+    <label>
+      <span>Residente</span>
+      <select name="personId" required>
+        <option value="">Seleccionar</option>
+        {residents
+          .filter((resident) => resident.buildingId === buildingId)
+          .map((resident) => (
+            <option key={resident.personId} value={resident.personId}>
+              {resident.lastName}, {resident.firstName}
+            </option>
+          ))}
+      </select>
+    </label>
+  );
+}
+
 function ResidentList({ residents }: { residents: Resident[] }) {
   if (residents.length === 0) {
     return <p className="empty-state">Sin residentes cargados</p>;
@@ -1044,6 +1159,30 @@ function ParkingSpaceList({
             <span>{parkingSpace.unitLabel ?? "Sin unidad asociada"}</span>
           </div>
           <p>{parkingSpace.floorName ?? "Sin piso"}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function VehicleList({ vehicles }: { vehicles: Vehicle[] }) {
+  if (vehicles.length === 0) {
+    return <p className="empty-state spaced">Sin vehiculos cargados</p>;
+  }
+
+  return (
+    <div className="resident-list spaced">
+      {vehicles.map((vehicle) => (
+        <article className="resident-row" key={vehicle.id}>
+          <div>
+            <strong>{vehicle.plateNormalized}</strong>
+            <span>{vehicle.residentName}</span>
+          </div>
+          <p>
+            {[vehicle.brand, vehicle.model, vehicle.color]
+              .filter(Boolean)
+              .join(" ") || vehicle.state}
+          </p>
         </article>
       ))}
     </div>
@@ -1188,6 +1327,27 @@ async function loadEmailOutbox(
       accessToken,
     );
     setEmailOutbox(response.emails);
+  } catch (error) {
+    setStatus(getErrorMessage(error));
+  }
+}
+
+async function loadVehicles(
+  buildingId: string,
+  setVehicles: (vehicles: Vehicle[]) => void,
+  setStatus: (status: string) => void,
+) {
+  const accessToken = localStorage.getItem(accessTokenKey);
+  if (!accessToken) {
+    return;
+  }
+
+  try {
+    const response = await apiGet<{ vehicles: Vehicle[] }>(
+      `/buildings/${buildingId}/vehicles`,
+      accessToken,
+    );
+    setVehicles(response.vehicles);
   } catch (error) {
     setStatus(getErrorMessage(error));
   }

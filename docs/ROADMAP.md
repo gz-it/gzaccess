@@ -14,7 +14,7 @@
 | 0 - Especificacion y base ejecutable | validada  | Proyecto completo ejecutable en desarrollo.                |
 | 1 - Identidad, organizaciones y RBAC | validada  | Cuentas reales y seguras para cada rol.                    |
 | 2 - Edificio y residentes            | en curso  | Un edificio administra su poblacion completa.              |
-| 3 - App, rostros y vehiculos         | pendiente | Residentes autogestionan rostro y vehiculos.               |
+| 3 - App, rostros y vehiculos         | en curso  | Residentes autogestionan rostro y vehiculos.               |
 | 4 - Permisos y simulador             | pendiente | Recorrido completo validado sin hardware.                  |
 | 5 - GzAccess Edge                    | pendiente | Nube y red local se comunican de forma segura.             |
 | 6 - Visitantes                       | pendiente | Ciclo de visita completo con simulador.                    |
@@ -89,3 +89,16 @@
 - [x] Panel web para crear pisos y asignarlos a unidades.
 - [x] Panel web para crear y listar cocheras.
 - [x] Panel web para importar residentes por CSV.
+
+## Fase 3 checklist
+
+- [x] Modelo base de vehiculos versionado en Prisma.
+- [x] API protegida para crear vehiculos de residentes.
+- [x] API protegida para listar vehiculos por edificio.
+- [x] Normalizacion de patente y bloqueo de duplicados por edificio.
+- [x] Bloqueo probado contra acceso cruzado entre organizaciones.
+- [x] Panel web para cargar y listar vehiculos.
+- [ ] App mobile para autogestion de vehiculos.
+- [ ] Captura de rostro y consentimiento biometrico.
+- [ ] Carga de imagenes/archivos con storage real.
+- [ ] Push mobile.

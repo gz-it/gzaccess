@@ -373,7 +373,7 @@ function ProfilePanel({ user }: { user: User }) {
       />
       <View style={styles.moduleGrid}>
         <ModuleTile label="Rostro" state="Fase 3" />
-        <ModuleTile label="Vehiculos" state="Fase 3" />
+        <ModuleTile label="Vehiculos" state="API base" />
         <ModuleTile label="Notificaciones" state="Push pendiente" />
       </View>
     </View>

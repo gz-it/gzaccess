@@ -352,3 +352,26 @@ Limitaciones:
 - No se genero APK/IPA firmado porque faltan cuentas, certificados y pipeline de build.
 - La credencial QR, rostro, vehiculos, push y permisos runtime quedan pendientes para Fase 3 y fases de permisos/sincronizacion.
 - En emuladores/dispositivos reales se debe configurar `EXPO_PUBLIC_API_BASE_URL` apuntando al host accesible de la API; `localhost` solo sirve en ciertos entornos de desarrollo.
+
+## 2026-08-17 - Fase 3 vehiculos base
+
+Comandos ejecutados:
+
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 23 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+- `expo export --platform all --output-dir dist-export`: paso con bundles Android e iOS.
+
+Alcance validado:
+
+- API protegida para crear vehiculos asociados a residentes del edificio.
+- API protegida para listar vehiculos por edificio.
+- Patentes normalizadas para comparacion y bloqueo de duplicados por edificio.
+- Panel web permite cargar y listar vehiculos del edificio activo.
+
+Limitaciones:
+
+- Todavia no hay autogestion mobile de vehiculos.
+- Todavia no se sincronizan patentes con dispositivos edge ni hardware real.

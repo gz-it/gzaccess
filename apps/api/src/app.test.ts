@@ -399,6 +399,51 @@ describe("building administration", () => {
       activationToken: expect.any(String),
       emailId: expect.any(String),
     });
+    const personId = resident.json<{ personId: string }>().personId;
+
+    const vehicle = await app.inject({
+      method: "POST",
+      url: "/api/v1/vehicles",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        personId,
+        plate: "ab 123 cd",
+        country: "AR",
+        brand: "Toyota",
+        model: "Corolla",
+        color: "Gris",
+        type: "AUTO",
+      },
+    });
+    expect(vehicle.statusCode).toBe(200);
+    expect(vehicle.json()).toMatchObject({
+      vehicle: {
+        buildingId,
+        personId,
+        residentName: "Ada Lovelace",
+        plateOriginal: "ab 123 cd",
+        plateNormalized: "AB123CD",
+        state: "PENDING",
+      },
+    });
+
+    const listedVehicles = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/vehicles`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listedVehicles.statusCode).toBe(200);
+    expect(listedVehicles.json()).toMatchObject({
+      vehicles: [
+        {
+          buildingId,
+          personId,
+          residentName: "Ada Lovelace",
+          plateNormalized: "AB123CD",
+        },
+      ],
+    });
 
     const emailOutbox = await app.inject({
       method: "GET",
@@ -568,6 +613,35 @@ describe("building administration", () => {
     const response = await app.inject({
       method: "GET",
       url: `/api/v1/buildings/${buildingId}/parking-spaces`,
+      headers: authHeaders(adminB.accessToken),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
+  });
+
+  it("blocks cross-organization vehicle listing", async () => {
+    const app = buildApp();
+    const adminA = await createActivatedAdmin(app, "vehicles-a@gzit.test");
+    const adminB = await createActivatedAdmin(app, "vehicles-b@gzit.test");
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(adminA.accessToken),
+      payload: {
+        organizationId: adminA.organizationId,
+        name: "Torre Vehiculos",
+        address: "Calle Seis 600",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/vehicles`,
       headers: authHeaders(adminB.accessToken),
     });
 
