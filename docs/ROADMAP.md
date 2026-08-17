@@ -77,8 +77,9 @@
 - [x] Pisos completos para asociar unidades.
 - [x] Cocheras base completas para asociar a edificio, piso y unidad.
 - [ ] Invitacion real por email para residentes.
-- [ ] Importacion validada de residentes.
+- [x] Importacion validada de residentes.
 - [x] Panel web inicial de administracion de edificios, unidades y residentes.
 - [x] Panel web con recarga real de unidades y poblacion por edificio.
 - [x] Panel web para crear pisos y asignarlos a unidades.
 - [x] Panel web para crear y listar cocheras.
+- [x] Panel web para importar residentes por CSV.

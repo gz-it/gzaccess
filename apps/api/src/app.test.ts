@@ -467,6 +467,84 @@ describe("building administration", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ error: "ORGANIZATION_FORBIDDEN" });
   });
+
+  it("imports residents in batches", async () => {
+    const app = buildApp();
+    const { accessToken, organizationId } = await createActivatedAdmin(
+      app,
+      "imports@gzit.test",
+    );
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(accessToken),
+      payload: {
+        organizationId,
+        name: "Torre Import",
+        address: "Calle Cinco 500",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const unit = await app.inject({
+      method: "POST",
+      url: "/api/v1/units",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        label: "8B",
+      },
+    });
+    const unitId = unit.json<{ unit: { id: string } }>().unit.id;
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/residents/import",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        residents: [
+          {
+            unitId,
+            firstName: "Grace",
+            lastName: "Hopper",
+            email: "grace@example.test",
+          },
+          {
+            firstName: "Mary",
+            lastName: "Jackson",
+            documentNumber: "87654321",
+          },
+        ],
+      },
+    });
+
+    expect(imported.statusCode).toBe(200);
+    expect(imported.json()).toMatchObject({
+      importedCount: 2,
+      failedCount: 0,
+      imported: [
+        { personId: expect.any(String), activationToken: expect.any(String) },
+        { personId: expect.any(String) },
+      ],
+    });
+
+    const listedResidents = await app.inject({
+      method: "GET",
+      url: `/api/v1/buildings/${buildingId}/residents`,
+      headers: authHeaders(accessToken),
+    });
+    expect(listedResidents.statusCode).toBe(200);
+    expect(listedResidents.json()).toMatchObject({
+      residents: [
+        { firstName: "Grace", lastName: "Hopper", unitLabel: "8B" },
+        { firstName: "Mary", lastName: "Jackson" },
+      ],
+    });
+  });
 });
 
 async function createActivatedAdmin(

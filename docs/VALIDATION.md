@@ -246,3 +246,26 @@ Limitaciones:
 
 - La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.
 - La asociacion de cocheras a vehiculos queda para el modulo de vehiculos de Fase 3.
+
+## 2026-08-16 - Fase 2 importacion de residentes
+
+Comandos ejecutados:
+
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 20 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+
+Alcance validado:
+
+- API protegida para importar residentes por lote.
+- Validacion por fila y respuesta con importados/fallidos.
+- Importacion puede asociar residentes a unidades existentes por `unitId`.
+- Panel web permite pegar CSV e importar residentes del edificio activo.
+- Panel web mapea la columna `unidad` contra las unidades cargadas del edificio.
+
+Limitaciones:
+
+- El parser CSV web cubre comas y comillas dobles; importaciones masivas complejas deberian migrarse luego a carga de archivo con previsualizacion.
+- La invitacion real por email sigue pendiente hasta configurar proveedor de correo.

@@ -113,6 +113,7 @@ type CreateFloorInput = z.infer<typeof createFloorSchema>;
 type CreateParkingSpaceInput = z.infer<typeof createParkingSpaceSchema>;
 type CreateUnitInput = z.infer<typeof createUnitSchema>;
 type RegisterResidentInput = z.infer<typeof registerResidentSchema>;
+type ImportResidentsInput = z.infer<typeof importResidentsSchema>;
 
 interface StoredPerson {
   id: string;
@@ -719,6 +720,15 @@ const registerResidentSchema = z.object({
   phone: z.string().optional(),
 });
 
+const importResidentRowSchema = registerResidentSchema.omit({
+  buildingId: true,
+});
+
+const importResidentsSchema = z.object({
+  buildingId: z.string().min(1),
+  residents: z.array(importResidentRowSchema).min(1).max(500),
+});
+
 export async function registerBuildingRoutes(
   app: FastifyInstance,
   authStore: AuthStore,
@@ -789,6 +799,12 @@ export async function registerBuildingRoutes(
     return buildingStore.registerResident(user, input);
   });
 
+  app.post("/api/v1/residents/import", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    const input = importResidentsSchema.parse(request.body);
+    return importResidents(user, buildingStore, input);
+  });
+
   app.get("/api/v1/buildings/:buildingId/residents", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const params = z
@@ -796,6 +812,38 @@ export async function registerBuildingRoutes(
       .parse(request.params);
     return buildingStore.listResidents(user, params.buildingId);
   });
+}
+
+async function importResidents(
+  user: AuthenticatedUser,
+  buildingStore: BuildingStore,
+  input: ImportResidentsInput,
+) {
+  const imported: ResidentInvite[] = [];
+  const failed: Array<{ row: number; error: string }> = [];
+
+  for (const [index, resident] of input.residents.entries()) {
+    try {
+      imported.push(
+        await buildingStore.registerResident(user, {
+          ...resident,
+          buildingId: input.buildingId,
+        }),
+      );
+    } catch (error) {
+      failed.push({
+        row: index + 1,
+        error: error instanceof Error ? error.message : "IMPORT_FAILED",
+      });
+    }
+  }
+
+  return {
+    importedCount: imported.length,
+    failedCount: failed.length,
+    imported,
+    failed,
+  };
 }
 
 async function requireAuthenticated(

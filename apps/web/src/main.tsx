@@ -367,6 +367,49 @@ function App() {
     }
   }
 
+  async function submitResidentImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedBuildingId) {
+      setStatus("BUILDING_REQUIRED");
+      return;
+    }
+
+    const form = new FormData(event.currentTarget);
+    const csv = String(form.get("csv") || "");
+    const unitByLabel = new Map(
+      units
+        .filter((unit) => unit.buildingId === selectedBuildingId)
+        .map((unit) => [unit.label.toLowerCase(), unit.id]),
+    );
+    const residents = parseResidentCsv(csv, unitByLabel);
+    if (residents.length === 0) {
+      setStatus("IMPORT_EMPTY");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{
+        importedCount: number;
+        failedCount: number;
+      }>("/residents/import", {
+        buildingId: selectedBuildingId,
+        residents,
+      });
+      await loadResidents(selectedBuildingId, setResidents, setStatus);
+      setStatus(
+        `Importados ${response.importedCount}; fallidos ${response.failedCount}`,
+      );
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitResident(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -555,6 +598,16 @@ function App() {
                 <ParkingSpaceList parkingSpaces={parkingSpaces} />
               </Panel>
 
+              <Panel title="Importar">
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Importar residentes"
+                  onSubmit={submitResidentImport}
+                >
+                  <CsvField />
+                </AdminForm>
+              </Panel>
+
               <Panel title="Poblacion">
                 <ResidentList residents={residents} />
               </Panel>
@@ -724,6 +777,20 @@ function Field({
         name={name}
         required={required}
         type={type}
+      />
+    </label>
+  );
+}
+
+function CsvField() {
+  return (
+    <label>
+      <span>CSV</span>
+      <textarea
+        name="csv"
+        placeholder="nombre,apellido,email,documento,telefono,unidad"
+        required
+        rows={8}
       />
     </label>
   );
@@ -1016,6 +1083,80 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
   }
 
   return data;
+}
+
+function parseResidentCsv(csv: string, unitByLabel: Map<string, string>) {
+  const rows = csv
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(splitCsvLine);
+  const [header, ...dataRows] = rows;
+  if (!header) {
+    return [];
+  }
+
+  const indexes = new Map(
+    header.map((name, index) => [normalizeHeader(name), index]),
+  );
+
+  return dataRows
+    .map((row) => {
+      const unitLabel = getCsvValue(row, indexes, "unidad");
+      return {
+        unitId: unitLabel
+          ? unitByLabel.get(unitLabel.toLowerCase())
+          : undefined,
+        firstName: getCsvValue(row, indexes, "nombre"),
+        lastName: getCsvValue(row, indexes, "apellido"),
+        documentNumber: getCsvValue(row, indexes, "documento") || undefined,
+        email: getCsvValue(row, indexes, "email") || undefined,
+        phone: getCsvValue(row, indexes, "telefono") || undefined,
+      };
+    })
+    .filter((resident) => resident.firstName && resident.lastName);
+}
+
+function getCsvValue(row: string[], indexes: Map<string, number>, key: string) {
+  const index = indexes.get(key);
+  return index === undefined ? "" : (row[index] ?? "").trim();
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function splitCsvLine(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (char === "," && !quoted) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  values.push(current);
+  return values;
 }
 
 function persistTokens(tokens: Tokens) {

@@ -17,7 +17,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -209,12 +210,19 @@ article p {
 }
 
 .auth-form input,
-.auth-form select {
+.auth-form select,
+.auth-form textarea {
   background: #ffffff;
   border: 1px solid #c7d0ca;
   border-radius: 8px;
   min-height: 42px;
   padding: 8px 10px;
+}
+
+.auth-form textarea {
+  line-height: 1.4;
+  min-height: 132px;
+  resize: vertical;
 }
 
 .auth-form button {
