@@ -483,6 +483,75 @@ describe("building administration", () => {
     });
   });
 
+  it("returns the resident profile for the authenticated session", async () => {
+    const app = buildApp();
+    const email = "resident-profile@gzit.test";
+    const { accessToken, organizationId } = await createActivatedAdmin(
+      app,
+      email,
+    );
+
+    const building = await app.inject({
+      method: "POST",
+      url: "/api/v1/buildings",
+      headers: authHeaders(accessToken),
+      payload: {
+        organizationId,
+        name: "Torre Perfil",
+        address: "Perfil 123",
+        timezone: "America/Buenos_Aires",
+      },
+    });
+    expect(building.statusCode).toBe(200);
+    const buildingId = building.json<{ building: { id: string } }>().building
+      .id;
+
+    const unit = await app.inject({
+      method: "POST",
+      url: "/api/v1/units",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        label: "7B",
+      },
+    });
+    expect(unit.statusCode).toBe(200);
+    const unitId = unit.json<{ unit: { id: string } }>().unit.id;
+
+    const resident = await app.inject({
+      method: "POST",
+      url: "/api/v1/residents",
+      headers: authHeaders(accessToken),
+      payload: {
+        buildingId,
+        unitId,
+        firstName: "Rita",
+        lastName: "Perfil",
+        email,
+      },
+    });
+    expect(resident.statusCode).toBe(200);
+
+    const profile = await app.inject({
+      method: "GET",
+      url: "/api/v1/resident-profile",
+      headers: authHeaders(accessToken),
+    });
+    expect(profile.statusCode).toBe(200);
+    expect(profile.json()).toMatchObject({
+      residents: [
+        {
+          buildingId,
+          unitId,
+          unitLabel: "7B",
+          firstName: "Rita",
+          lastName: "Perfil",
+          email,
+        },
+      ],
+    });
+  });
+
   it("blocks cross-organization building access", async () => {
     const app = buildApp();
     const adminA = await createActivatedAdmin(app, "admin-a@gzit.test");

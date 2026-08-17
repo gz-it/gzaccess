@@ -15,8 +15,8 @@ import {
   activateAccount,
   createVehicle,
   getCurrentUser,
+  getResidentProfile,
   listBuildings,
-  listResidents,
   listVehicles,
   login,
   requestPasswordReset,
@@ -79,21 +79,23 @@ export default function App() {
       return;
     }
 
-    const response = await listBuildings(accessToken, organizationId);
-    setBuildings(response.buildings);
-    const buildingId = response.buildings[0]?.id ?? "";
+    const [buildingResponse, residentResponse] = await Promise.all([
+      listBuildings(accessToken, organizationId),
+      getResidentProfile(accessToken),
+    ]);
+    setBuildings(buildingResponse.buildings);
+    setResidents(residentResponse.residents);
+    const buildingId =
+      residentResponse.residents[0]?.buildingId ??
+      buildingResponse.buildings[0]?.id ??
+      "";
     setSelectedBuildingId(buildingId);
     if (!buildingId) {
-      setResidents([]);
       setVehicles([]);
       return;
     }
 
-    const [residentResponse, vehicleResponse] = await Promise.all([
-      listResidents(accessToken, buildingId),
-      listVehicles(accessToken, buildingId),
-    ]);
-    setResidents(residentResponse.residents);
+    const vehicleResponse = await listVehicles(accessToken, buildingId);
     setVehicles(vehicleResponse.vehicles);
   }
 
@@ -128,7 +130,7 @@ export default function App() {
   }) {
     await runAction(async () => {
       const accessToken = await requireStoredAccessToken();
-      const resident = findCurrentResident(residents, user);
+      const resident = findCurrentResident(residents, selectedBuildingId);
       if (!selectedBuildingId || !resident) {
         throw new Error("RESIDENT_NOT_FOUND");
       }
@@ -194,6 +196,7 @@ export default function App() {
           homeTab={homeTab}
           primaryRole={primaryRole}
           residents={residents}
+          selectedBuildingId={selectedBuildingId}
           setHomeTab={setHomeTab}
           status={status}
           user={user}
@@ -347,6 +350,7 @@ function AuthenticatedApp({
   onVehicleSubmit,
   primaryRole,
   residents,
+  selectedBuildingId,
   setHomeTab,
   status,
   user,
@@ -364,12 +368,13 @@ function AuthenticatedApp({
   }) => Promise<void>;
   primaryRole: string;
   residents: Resident[];
+  selectedBuildingId: string;
   setHomeTab: (tab: HomeTab) => void;
   status: string;
   user: User;
   vehicles: Vehicle[];
 }) {
-  const currentResident = findCurrentResident(residents, user);
+  const currentResident = findCurrentResident(residents, selectedBuildingId);
 
   return (
     <View style={styles.appContent}>
@@ -530,7 +535,7 @@ function VehiclePanel({
         </Text>
       ) : (
         <Text style={styles.panelBody}>
-          No encontramos un residente asociado al email de esta sesion.
+          No encontramos un perfil residencial asociado a esta sesion.
         </Text>
       )}
 
@@ -693,10 +698,11 @@ async function requireStoredAccessToken(): Promise<string> {
 
 function findCurrentResident(
   residents: Resident[],
-  user: User | undefined,
+  buildingId: string,
 ): Resident | undefined {
-  return residents.find(
-    (resident) => resident.email?.toLowerCase() === user?.email.toLowerCase(),
+  return (
+    residents.find((resident) => resident.buildingId === buildingId) ??
+    residents[0]
   );
 }
 

@@ -54,6 +54,12 @@ export async function listResidents(
   return apiGet(`/buildings/${buildingId}/residents`, accessToken);
 }
 
+export async function getResidentProfile(
+  accessToken: string,
+): Promise<{ residents: Resident[] }> {
+  return apiGet("/resident-profile", accessToken);
+}
+
 export async function listVehicles(
   accessToken: string,
   buildingId: string,

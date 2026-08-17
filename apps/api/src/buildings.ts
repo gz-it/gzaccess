@@ -67,6 +67,10 @@ export interface ResidentSummary {
   documentNumber?: string | null;
 }
 
+export interface ResidentProfile {
+  residents: ResidentSummary[];
+}
+
 export interface VehicleSummary {
   id: string;
   organizationId: string;
@@ -126,6 +130,7 @@ export interface BuildingStore {
     user: AuthenticatedUser,
     buildingId: string,
   ): Promise<{ residents: ResidentSummary[] }>;
+  listResidentProfile(user: AuthenticatedUser): Promise<ResidentProfile>;
   createVehicle(
     user: AuthenticatedUser,
     input: CreateVehicleInput,
@@ -154,6 +159,7 @@ interface StoredPerson {
   email?: string;
   phone?: string;
   documentNumber?: string;
+  userId?: string;
 }
 
 interface StoredUser {
@@ -303,7 +309,7 @@ export class InMemoryBuildingStore implements BuildingStore {
     }
 
     const personId = createId("per");
-    this.persons.set(personId, {
+    const storedPerson: StoredPerson = {
       id: personId,
       organizationId: building.organizationId,
       buildingId: building.id,
@@ -313,7 +319,8 @@ export class InMemoryBuildingStore implements BuildingStore {
       email: input.email,
       phone: input.phone,
       documentNumber: input.documentNumber,
-    });
+    };
+    this.persons.set(personId, storedPerson);
 
     if (!input.email) {
       return {
@@ -330,6 +337,7 @@ export class InMemoryBuildingStore implements BuildingStore {
       email: input.email.toLowerCase(),
       displayName: `${input.firstName} ${input.lastName}`,
     });
+    this.persons.set(personId, { ...storedPerson, userId });
 
     return {
       organizationId: building.organizationId,
@@ -346,20 +354,26 @@ export class InMemoryBuildingStore implements BuildingStore {
 
     const residents = [...this.persons.values()]
       .filter((person) => person.buildingId === buildingId)
-      .map((person) => {
-        const unit = person.unitId ? this.units.get(person.unitId) : undefined;
-        return {
-          personId: person.id,
-          buildingId,
-          unitId: person.unitId,
-          unitLabel: unit?.label,
-          firstName: person.firstName,
-          lastName: person.lastName,
-          email: person.email,
-          phone: person.phone,
-          documentNumber: person.documentNumber,
-        };
-      })
+      .map((person) =>
+        mapStoredResident(person, this.units.get(person.unitId ?? "")),
+      )
+      .sort(compareResidents);
+
+    return { residents };
+  }
+
+  async listResidentProfile(user: AuthenticatedUser): Promise<ResidentProfile> {
+    const userEmail = user.email.toLowerCase();
+    const residents = [...this.persons.values()]
+      .filter(
+        (person) =>
+          person.userId === user.id ||
+          person.email?.toLowerCase() === userEmail,
+      )
+      .filter((person) => user.organizationIds.includes(person.organizationId))
+      .map((person) =>
+        mapStoredResident(person, this.units.get(person.unitId ?? "")),
+      )
       .sort(compareResidents);
 
     return { residents };
@@ -770,6 +784,40 @@ export class PrismaBuildingStore implements BuildingStore {
     return { residents };
   }
 
+  async listResidentProfile(user: AuthenticatedUser): Promise<ResidentProfile> {
+    const memberships = await this.client.buildingMembership.findMany({
+      include: {
+        person: true,
+        unit: true,
+      },
+      where: {
+        isActive: true,
+        role: "RESIDENT",
+        organizationId: { in: user.organizationIds },
+        OR: [
+          { person: { is: { userId: user.id } } },
+          { person: { is: { email: user.email.toLowerCase() } } },
+        ],
+      },
+    });
+
+    const residents = memberships
+      .map((membership) => ({
+        personId: membership.person.id,
+        buildingId: membership.buildingId,
+        unitId: membership.unitId,
+        unitLabel: membership.unit?.label,
+        firstName: membership.person.firstName,
+        lastName: membership.person.lastName,
+        email: membership.person.email,
+        phone: membership.person.phone,
+        documentNumber: membership.person.documentNumber,
+      }))
+      .sort(compareResidents);
+
+    return { residents };
+  }
+
   async createVehicle(user: AuthenticatedUser, input: CreateVehicleInput) {
     const building = await this.client.building.findUnique({
       where: { id: input.buildingId },
@@ -1005,6 +1053,11 @@ export async function registerBuildingRoutes(
     return buildingStore.listResidents(user, params.buildingId);
   });
 
+  app.get("/api/v1/resident-profile", async (request) => {
+    const user = await requireAuthenticated(authStore, request);
+    return buildingStore.listResidentProfile(user);
+  });
+
   app.post("/api/v1/vehicles", async (request) => {
     const user = await requireAuthenticated(authStore, request);
     const input = createVehicleSchema.parse(request.body);
@@ -1097,6 +1150,23 @@ async function requireAuthenticated(
 
 function createId(prefix: string): string {
   return `${prefix}_${createOpaqueToken(12)}`;
+}
+
+function mapStoredResident(
+  person: StoredPerson,
+  unit: UnitSummary | undefined,
+): ResidentSummary {
+  return {
+    personId: person.id,
+    buildingId: person.buildingId,
+    unitId: person.unitId,
+    unitLabel: unit?.label,
+    firstName: person.firstName,
+    lastName: person.lastName,
+    email: person.email,
+    phone: person.phone,
+    documentNumber: person.documentNumber,
+  };
 }
 
 function compareResidents(left: ResidentSummary, right: ResidentSummary) {

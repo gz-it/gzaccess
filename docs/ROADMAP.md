@@ -99,6 +99,7 @@
 - [x] Bloqueo probado contra acceso cruzado entre organizaciones.
 - [x] Panel web para cargar y listar vehiculos.
 - [x] App mobile para autogestion de vehiculos.
+- [x] API mobile de perfil residencial propio.
 - [ ] Captura de rostro y consentimiento biometrico.
 - [ ] Carga de imagenes/archivos con storage real.
 - [ ] Push mobile.

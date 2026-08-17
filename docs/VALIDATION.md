@@ -376,4 +376,24 @@ Alcance validado:
 Limitaciones:
 
 - Todavia no se sincronizan patentes con dispositivos edge ni hardware real.
-- La asociacion mobile de residente usa el email de la sesion; en produccion conviene exponer un endpoint dedicado de perfil residencial.
+
+## 2026-08-17 - Fase 3 perfil residencial mobile
+
+Comandos ejecutados:
+
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 24 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+- `expo export --platform all --output-dir dist-export`: paso con bundles Android e iOS.
+
+Alcance validado:
+
+- API protegida `/api/v1/resident-profile` para que la app mobile obtenga solamente los perfiles residenciales de la sesion activa.
+- App mobile Android/iPhone usa el perfil residencial propio para seleccionar residente y edificio al autogestionar vehiculos.
+- Se elimina la dependencia mobile de listar toda la poblacion del edificio para encontrar al residente actual.
+
+Limitaciones:
+
+- Todavia no se sincronizan patentes con dispositivos edge ni hardware real.
