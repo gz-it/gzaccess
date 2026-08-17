@@ -13,16 +13,19 @@ import {
 import * as SecureStore from "expo-secure-store";
 import {
   activateAccount,
+  createVehicle,
   getCurrentUser,
   listBuildings,
+  listResidents,
+  listVehicles,
   login,
   requestPasswordReset,
   type ApiError,
 } from "./src/api";
-import type { Building, Tokens, User } from "./src/types";
+import type { Building, Resident, Tokens, User, Vehicle } from "./src/types";
 
 type AuthMode = "login" | "activation" | "reset";
-type HomeTab = "access" | "profile" | "building";
+type HomeTab = "access" | "profile" | "building" | "vehicles";
 
 const accessTokenKey = "gzaccess.accessToken";
 const refreshTokenKey = "gzaccess.refreshToken";
@@ -32,6 +35,9 @@ export default function App() {
   const [homeTab, setHomeTab] = useState<HomeTab>("access");
   const [user, setUser] = useState<User>();
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedBuildingId, setSelectedBuildingId] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(true);
 
@@ -75,6 +81,20 @@ export default function App() {
 
     const response = await listBuildings(accessToken, organizationId);
     setBuildings(response.buildings);
+    const buildingId = response.buildings[0]?.id ?? "";
+    setSelectedBuildingId(buildingId);
+    if (!buildingId) {
+      setResidents([]);
+      setVehicles([]);
+      return;
+    }
+
+    const [residentResponse, vehicleResponse] = await Promise.all([
+      listResidents(accessToken, buildingId),
+      listVehicles(accessToken, buildingId),
+    ]);
+    setResidents(residentResponse.residents);
+    setVehicles(vehicleResponse.vehicles);
   }
 
   async function submitLogin(email: string, password: string, mfaCode: string) {
@@ -100,10 +120,45 @@ export default function App() {
     });
   }
 
+  async function submitVehicle(input: {
+    plate: string;
+    brand: string;
+    model: string;
+    color: string;
+  }) {
+    await runAction(async () => {
+      const accessToken = await requireStoredAccessToken();
+      const resident = findCurrentResident(residents, user);
+      if (!selectedBuildingId || !resident) {
+        throw new Error("RESIDENT_NOT_FOUND");
+      }
+
+      const response = await createVehicle(accessToken, {
+        buildingId: selectedBuildingId,
+        personId: resident.personId,
+        plate: input.plate,
+        country: "AR",
+        brand: input.brand || undefined,
+        model: input.model || undefined,
+        color: input.color || undefined,
+        type: "AUTO",
+      });
+      setVehicles((current) =>
+        [...current, response.vehicle].sort((left, right) =>
+          left.plateNormalized.localeCompare(right.plateNormalized),
+        ),
+      );
+      setStatus("Vehiculo cargado");
+    });
+  }
+
   async function logout() {
     await clearStoredSession();
     setUser(undefined);
     setBuildings([]);
+    setResidents([]);
+    setVehicles([]);
+    setSelectedBuildingId("");
     setStatus("");
   }
 
@@ -138,10 +193,13 @@ export default function App() {
           busy={busy}
           homeTab={homeTab}
           primaryRole={primaryRole}
+          residents={residents}
           setHomeTab={setHomeTab}
           status={status}
           user={user}
+          vehicles={vehicles}
           onLogout={logout}
+          onVehicleSubmit={submitVehicle}
         />
       ) : (
         <AuthApp
@@ -286,20 +344,33 @@ function AuthenticatedApp({
   busy,
   homeTab,
   onLogout,
+  onVehicleSubmit,
   primaryRole,
+  residents,
   setHomeTab,
   status,
   user,
+  vehicles,
 }: {
   buildings: Building[];
   busy: boolean;
   homeTab: HomeTab;
   onLogout: () => Promise<void>;
+  onVehicleSubmit: (input: {
+    plate: string;
+    brand: string;
+    model: string;
+    color: string;
+  }) => Promise<void>;
   primaryRole: string;
+  residents: Resident[];
   setHomeTab: (tab: HomeTab) => void;
   status: string;
   user: User;
+  vehicles: Vehicle[];
 }) {
+  const currentResident = findCurrentResident(residents, user);
+
   return (
     <View style={styles.appContent}>
       <View style={styles.header}>
@@ -329,6 +400,11 @@ function AuthenticatedApp({
           label="Edificio"
           onPress={() => setHomeTab("building")}
         />
+        <TabButton
+          active={homeTab === "vehicles"}
+          label="Vehiculos"
+          onPress={() => setHomeTab("vehicles")}
+        />
       </View>
 
       <ScrollView contentContainerStyle={styles.homeBody}>
@@ -338,6 +414,14 @@ function AuthenticatedApp({
         {homeTab === "profile" ? <ProfilePanel user={user} /> : null}
         {homeTab === "building" ? (
           <BuildingPanel buildings={buildings} user={user} />
+        ) : null}
+        {homeTab === "vehicles" ? (
+          <VehiclePanel
+            busy={busy}
+            currentResident={currentResident}
+            vehicles={vehicles}
+            onSubmit={onVehicleSubmit}
+          />
         ) : null}
       </ScrollView>
     </View>
@@ -403,6 +487,86 @@ function BuildingPanel({
         ))
       )}
       <Text style={styles.caption}>{user.organizationIds.join(", ")}</Text>
+    </View>
+  );
+}
+
+function VehiclePanel({
+  busy,
+  currentResident,
+  onSubmit,
+  vehicles,
+}: {
+  busy: boolean;
+  currentResident?: Resident;
+  vehicles: Vehicle[];
+  onSubmit: (input: {
+    plate: string;
+    brand: string;
+    model: string;
+    color: string;
+  }) => Promise<void>;
+}) {
+  const [plate, setPlate] = useState("");
+  const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
+  const [color, setColor] = useState("");
+
+  async function submit() {
+    await onSubmit({ plate, brand, model, color });
+    setPlate("");
+    setBrand("");
+    setModel("");
+    setColor("");
+  }
+
+  return (
+    <View style={styles.panel}>
+      <Text style={styles.panelTitle}>Vehiculos</Text>
+      {currentResident ? (
+        <Text style={styles.panelBody}>
+          {currentResident.firstName} {currentResident.lastName}
+          {currentResident.unitLabel ? ` - ${currentResident.unitLabel}` : ""}
+        </Text>
+      ) : (
+        <Text style={styles.panelBody}>
+          No encontramos un residente asociado al email de esta sesion.
+        </Text>
+      )}
+
+      <View style={styles.form}>
+        <FormInput
+          autoCapitalize="characters"
+          label="Patente"
+          value={plate}
+          onChangeText={setPlate}
+        />
+        <FormInput label="Marca" value={brand} onChangeText={setBrand} />
+        <FormInput label="Modelo" value={model} onChangeText={setModel} />
+        <FormInput label="Color" value={color} onChangeText={setColor} />
+        <PrimaryButton
+          busy={busy || !currentResident}
+          label="Cargar vehiculo"
+          onPress={submit}
+        />
+      </View>
+
+      <View style={styles.vehicleList}>
+        {vehicles.length === 0 ? (
+          <Text style={styles.caption}>Sin vehiculos cargados</Text>
+        ) : (
+          vehicles.map((vehicle) => (
+            <View key={vehicle.id} style={styles.vehicleRow}>
+              <Text style={styles.vehiclePlate}>{vehicle.plateNormalized}</Text>
+              <Text style={styles.vehicleDetail}>
+                {[vehicle.brand, vehicle.model, vehicle.color]
+                  .filter(Boolean)
+                  .join(" ") || vehicle.state}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
     </View>
   );
 }
@@ -516,6 +680,24 @@ function ModuleTile({ label, state }: { label: string; state: string }) {
 async function clearStoredSession() {
   await SecureStore.deleteItemAsync(accessTokenKey);
   await SecureStore.deleteItemAsync(refreshTokenKey);
+}
+
+async function requireStoredAccessToken(): Promise<string> {
+  const token = await SecureStore.getItemAsync(accessTokenKey);
+  if (!token) {
+    throw new Error("UNAUTHENTICATED");
+  }
+
+  return token;
+}
+
+function findCurrentResident(
+  residents: Resident[],
+  user: User | undefined,
+): Resident | undefined {
+  return residents.find(
+    (resident) => resident.email?.toLowerCase() === user?.email.toLowerCase(),
+  );
 }
 
 function getErrorMessage(error: unknown): string {
@@ -793,5 +975,24 @@ const styles = StyleSheet.create({
     color: "#18211f",
     fontSize: 22,
     fontWeight: "800",
+  },
+  vehicleDetail: {
+    color: "#4b5563",
+    fontSize: 14,
+  },
+  vehicleList: {
+    gap: 10,
+    marginTop: 16,
+  },
+  vehiclePlate: {
+    color: "#18211f",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  vehicleRow: {
+    backgroundColor: "#eef1ee",
+    borderRadius: 8,
+    gap: 4,
+    padding: 12,
   },
 });

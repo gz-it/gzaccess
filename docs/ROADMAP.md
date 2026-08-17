@@ -98,7 +98,7 @@
 - [x] Normalizacion de patente y bloqueo de duplicados por edificio.
 - [x] Bloqueo probado contra acceso cruzado entre organizaciones.
 - [x] Panel web para cargar y listar vehiculos.
-- [ ] App mobile para autogestion de vehiculos.
+- [x] App mobile para autogestion de vehiculos.
 - [ ] Captura de rostro y consentimiento biometrico.
 - [ ] Carga de imagenes/archivos con storage real.
 - [ ] Push mobile.

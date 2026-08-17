@@ -370,8 +370,10 @@ Alcance validado:
 - API protegida para listar vehiculos por edificio.
 - Patentes normalizadas para comparacion y bloqueo de duplicados por edificio.
 - Panel web permite cargar y listar vehiculos del edificio activo.
+- App mobile permite listar y cargar vehiculos para el residente asociado al email de la sesion.
+- Export mobile Android/iOS validado despues de incorporar la pantalla de vehiculos.
 
 Limitaciones:
 
-- Todavia no hay autogestion mobile de vehiculos.
 - Todavia no se sincronizan patentes con dispositivos edge ni hardware real.
+- La asociacion mobile de residente usa el email de la sesion; en produccion conviene exponer un endpoint dedicado de perfil residencial.

@@ -1,4 +1,4 @@
-import type { Building, Tokens, User } from "./types";
+import type { Building, Resident, Tokens, User, Vehicle } from "./types";
 
 const fallbackApiBaseUrl = "http://localhost:4000/api/v1";
 const apiBaseUrl =
@@ -47,6 +47,36 @@ export async function listBuildings(
   return apiGet(`/organizations/${organizationId}/buildings`, accessToken);
 }
 
+export async function listResidents(
+  accessToken: string,
+  buildingId: string,
+): Promise<{ residents: Resident[] }> {
+  return apiGet(`/buildings/${buildingId}/residents`, accessToken);
+}
+
+export async function listVehicles(
+  accessToken: string,
+  buildingId: string,
+): Promise<{ vehicles: Vehicle[] }> {
+  return apiGet(`/buildings/${buildingId}/vehicles`, accessToken);
+}
+
+export async function createVehicle(
+  accessToken: string,
+  input: {
+    buildingId: string;
+    personId: string;
+    plate: string;
+    country: string;
+    brand?: string;
+    model?: string;
+    color?: string;
+    type?: string;
+  },
+): Promise<{ vehicle: Vehicle }> {
+  return apiPostWithAuth("/vehicles", input, accessToken);
+}
+
 async function apiGet<T>(path: string, accessToken: string): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: { authorization: `Bearer ${accessToken}` },
@@ -59,6 +89,23 @@ async function apiPost<T>(path: string, payload: unknown): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     body: JSON.stringify(payload),
     headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+
+  return parseApiResponse<T>(response);
+}
+
+async function apiPostWithAuth<T>(
+  path: string,
+  payload: unknown,
+  accessToken: string,
+): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    body: JSON.stringify(payload),
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
     method: "POST",
   });
 
