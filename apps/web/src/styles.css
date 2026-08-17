@@ -234,6 +234,17 @@ article p {
   padding: 10px 14px;
 }
 
+.secondary-action {
+  background: #eef1ee;
+  border: 1px solid #c7d0ca;
+  border-radius: 8px;
+  color: #18211f;
+  margin-bottom: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  width: 100%;
+}
+
 .auth-form button:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -283,6 +294,15 @@ article p {
   border-radius: 8px;
   color: #18211f;
   margin: 14px 0 0;
+  overflow-wrap: anywhere;
+  padding: 10px;
+}
+
+.secret-value {
+  background: #eef1ee;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  margin: 0 0 12px;
   overflow-wrap: anywhere;
   padding: 10px;
 }

@@ -4,8 +4,10 @@ import { z } from "zod";
 import {
   addSeconds,
   createOpaqueToken,
+  createTotpSecret,
   hashOpaqueToken,
   hashPassword,
+  verifyTotpCode,
   verifyPassword,
 } from "@gzaccess/auth";
 import type { AuthenticatedUser, AuthTokens, Role } from "@gzaccess/contracts";
@@ -26,6 +28,8 @@ interface StoredUser {
   email: string;
   displayName: string;
   passwordHash?: string;
+  mfaSecret?: string;
+  mfaEnabledAt?: Date;
   isActive: boolean;
 }
 
@@ -61,6 +65,8 @@ interface UserWithMemberships {
   email: string;
   displayName: string;
   isActive: boolean;
+  mfaSecret?: string | null;
+  mfaEnabledAt?: Date | null;
   memberships: Array<{ organizationId: string; role: Role }>;
 }
 
@@ -76,7 +82,7 @@ export interface AuthStore {
     token: string;
     password: string;
   }): Promise<{ user: AuthenticatedUser; tokens: AuthTokens }>;
-  login(input: { email: string; password: string }): Promise<{
+  login(input: { email: string; password: string; mfaCode?: string }): Promise<{
     user: AuthenticatedUser;
     tokens: AuthTokens;
   }>;
@@ -89,6 +95,11 @@ export interface AuthStore {
     token: string;
     password: string;
   }): Promise<{ ok: true }>;
+  beginMfaSetup(
+    userId: string,
+  ): Promise<{ secret: string; otpauthUrl: string }>;
+  enableMfa(input: { userId: string; code: string }): Promise<{ ok: true }>;
+  disableMfa(input: { userId: string; code: string }): Promise<{ ok: true }>;
 }
 
 export class InMemoryAuthStore implements AuthStore {
@@ -183,6 +194,7 @@ export class InMemoryAuthStore implements AuthStore {
   async login(input: {
     email: string;
     password: string;
+    mfaCode?: string;
   }): Promise<{ user: AuthenticatedUser; tokens: AuthTokens }> {
     const user = [...this.users.values()].find(
       (item) => item.email === normalizeEmail(input.email),
@@ -204,6 +216,22 @@ export class InMemoryAuthStore implements AuthStore {
         result: "FAILED",
       });
       throw new AuthError("INVALID_CREDENTIALS", 401);
+    }
+    if (user.mfaEnabledAt) {
+      if (
+        !input.mfaCode ||
+        !user.mfaSecret ||
+        !verifyTotpCode(user.mfaSecret, input.mfaCode)
+      ) {
+        this.audit({
+          actorUserId: user.id,
+          action: "auth.login.mfa",
+          entityType: "User",
+          entityId: user.id,
+          result: "FAILED",
+        });
+        throw new AuthError("MFA_REQUIRED", 401);
+      }
     }
 
     this.audit({
@@ -297,6 +325,39 @@ export class InMemoryAuthStore implements AuthStore {
     });
 
     return { ok: true };
+  }
+
+  async beginMfaSetup(userId: string) {
+    const user = this.getUser(userId);
+    const secret = createTotpSecret();
+    user.mfaSecret = secret;
+    user.mfaEnabledAt = undefined;
+
+    return { secret, otpauthUrl: createOtpAuthUrl(user.email, secret) };
+  }
+
+  async enableMfa(input: { userId: string; code: string }) {
+    const user = this.getUser(input.userId);
+    if (!user.mfaSecret || !verifyTotpCode(user.mfaSecret, input.code)) {
+      throw new AuthError("INVALID_MFA_CODE", 400);
+    }
+    user.mfaEnabledAt = new Date();
+
+    return { ok: true as const };
+  }
+
+  async disableMfa(input: { userId: string; code: string }) {
+    const user = this.getUser(input.userId);
+    if (
+      user.mfaEnabledAt &&
+      (!user.mfaSecret || !verifyTotpCode(user.mfaSecret, input.code))
+    ) {
+      throw new AuthError("INVALID_MFA_CODE", 400);
+    }
+    user.mfaSecret = undefined;
+    user.mfaEnabledAt = undefined;
+
+    return { ok: true as const };
   }
 
   private createTokens(userId: string): AuthTokens {
@@ -471,6 +532,7 @@ export class PrismaAuthStore implements AuthStore {
   async login(input: {
     email: string;
     password: string;
+    mfaCode?: string;
   }): Promise<{ user: AuthenticatedUser; tokens: AuthTokens }> {
     const user = await this.client.user.findUnique({
       where: { email: normalizeEmail(input.email) },
@@ -494,6 +556,23 @@ export class PrismaAuthStore implements AuthStore {
         result: "FAILED",
       });
       throw new AuthError("INVALID_CREDENTIALS", 401);
+    }
+    if (user.mfaEnabledAt) {
+      if (
+        !input.mfaCode ||
+        !user.mfaSecret ||
+        !verifyTotpCode(user.mfaSecret, input.mfaCode)
+      ) {
+        await this.audit({
+          actorUserId: user.id,
+          organizationId: user.organizationId ?? undefined,
+          action: "auth.login.mfa",
+          entityType: "User",
+          entityId: user.id,
+          result: "FAILED",
+        });
+        throw new AuthError("MFA_REQUIRED", 401);
+      }
     }
 
     await this.audit({
@@ -625,6 +704,86 @@ export class PrismaAuthStore implements AuthStore {
     return { ok: true };
   }
 
+  async beginMfaSetup(userId: string) {
+    const user = await this.client.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new AuthError("USER_NOT_FOUND", 404);
+    }
+
+    const secret = createTotpSecret();
+    await this.client.user.update({
+      where: { id: userId },
+      data: { mfaSecret: secret, mfaEnabledAt: null },
+    });
+    await this.audit({
+      actorUserId: userId,
+      organizationId: user.organizationId ?? undefined,
+      action: "auth.mfa.setup",
+      entityType: "User",
+      entityId: userId,
+      result: "SUCCESS",
+    });
+
+    return { secret, otpauthUrl: createOtpAuthUrl(user.email, secret) };
+  }
+
+  async enableMfa(input: { userId: string; code: string }) {
+    const user = await this.client.user.findUnique({
+      where: { id: input.userId },
+    });
+    if (!user) {
+      throw new AuthError("USER_NOT_FOUND", 404);
+    }
+    if (!user.mfaSecret || !verifyTotpCode(user.mfaSecret, input.code)) {
+      throw new AuthError("INVALID_MFA_CODE", 400);
+    }
+
+    await this.client.user.update({
+      where: { id: input.userId },
+      data: { mfaEnabledAt: new Date() },
+    });
+    await this.audit({
+      actorUserId: input.userId,
+      organizationId: user.organizationId ?? undefined,
+      action: "auth.mfa.enable",
+      entityType: "User",
+      entityId: input.userId,
+      result: "SUCCESS",
+    });
+
+    return { ok: true as const };
+  }
+
+  async disableMfa(input: { userId: string; code: string }) {
+    const user = await this.client.user.findUnique({
+      where: { id: input.userId },
+    });
+    if (!user) {
+      throw new AuthError("USER_NOT_FOUND", 404);
+    }
+    if (
+      user.mfaEnabledAt &&
+      (!user.mfaSecret || !verifyTotpCode(user.mfaSecret, input.code))
+    ) {
+      throw new AuthError("INVALID_MFA_CODE", 400);
+    }
+
+    await this.client.user.update({
+      where: { id: input.userId },
+      data: { mfaSecret: null, mfaEnabledAt: null },
+    });
+    await this.audit({
+      actorUserId: input.userId,
+      organizationId: user.organizationId ?? undefined,
+      action: "auth.mfa.disable",
+      entityType: "User",
+      entityId: input.userId,
+      result: "SUCCESS",
+    });
+
+    return { ok: true as const };
+  }
+
   private async createTokens(userId: string): Promise<AuthTokens> {
     const refreshToken = createOpaqueToken();
     await this.client.session.create({
@@ -701,6 +860,7 @@ const activationSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  mfaCode: z.string().optional(),
 });
 
 const refreshSchema = z.object({
@@ -714,6 +874,10 @@ const requestPasswordResetSchema = z.object({
 const completePasswordResetSchema = z.object({
   token: z.string().min(20),
   password: z.string().min(10),
+});
+
+const mfaCodeSchema = z.object({
+  code: z.string().min(6).max(12),
 });
 
 export async function registerAuthRoutes(
@@ -755,6 +919,44 @@ export async function registerAuthRoutes(
   app.post("/api/v1/auth/password-reset/complete", async (request) => {
     const input = completePasswordResetSchema.parse(request.body);
     return store.completePasswordReset(input);
+  });
+
+  app.post("/api/v1/auth/mfa/setup", async (request, reply) => {
+    const user = await getAuthenticatedUser(store, request);
+    if (!user) {
+      return reply.code(401).send({ error: "UNAUTHENTICATED" });
+    }
+    if (!isMfaEligible(user)) {
+      return reply.code(403).send({ error: "MFA_NOT_ALLOWED" });
+    }
+
+    return store.beginMfaSetup(user.id);
+  });
+
+  app.post("/api/v1/auth/mfa/enable", async (request, reply) => {
+    const user = await getAuthenticatedUser(store, request);
+    if (!user) {
+      return reply.code(401).send({ error: "UNAUTHENTICATED" });
+    }
+    if (!isMfaEligible(user)) {
+      return reply.code(403).send({ error: "MFA_NOT_ALLOWED" });
+    }
+
+    const input = mfaCodeSchema.parse(request.body);
+    return store.enableMfa({ userId: user.id, code: input.code });
+  });
+
+  app.post("/api/v1/auth/mfa/disable", async (request, reply) => {
+    const user = await getAuthenticatedUser(store, request);
+    if (!user) {
+      return reply.code(401).send({ error: "UNAUTHENTICATED" });
+    }
+    if (!isMfaEligible(user)) {
+      return reply.code(403).send({ error: "MFA_NOT_ALLOWED" });
+    }
+
+    const input = mfaCodeSchema.parse(request.body);
+    return store.disableMfa({ userId: user.id, code: input.code });
   });
 
   app.get("/api/v1/auth/me", async (request, reply) => {
@@ -840,6 +1042,28 @@ function signAccessPayload(encodedPayload: string): string {
   return createHmac("sha256", getAccessTokenSecret())
     .update(encodedPayload)
     .digest("base64url");
+}
+
+function createOtpAuthUrl(email: string, secret: string): string {
+  const issuer = "GzAccess";
+  const label = encodeURIComponent(`${issuer}:${email}`);
+  const params = new URLSearchParams({
+    secret,
+    issuer,
+    algorithm: "SHA1",
+    digits: "6",
+    period: "30",
+  });
+
+  return `otpauth://totp/${label}?${params.toString()}`;
+}
+
+function isMfaEligible(user: AuthenticatedUser): boolean {
+  return user.roles.some((role) =>
+    ["GZIT_PLATFORM_ADMIN", "ORGANIZATION_ADMIN", "BUILDING_ADMIN"].includes(
+      role,
+    ),
+  );
 }
 
 function getAccessTokenSecret(): string {

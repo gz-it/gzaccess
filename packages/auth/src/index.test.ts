@@ -3,12 +3,15 @@ import {
   AuthorizationError,
   canAccessOrganization,
   createOpaqueToken,
+  createTotpCode,
+  createTotpSecret,
   getPermissionsForRoles,
   hashOpaqueToken,
   hasPermission,
   hashPassword,
   requireOrganizationAccess,
   requirePermission,
+  verifyTotpCode,
   verifyPassword,
 } from "./index.js";
 import type { AuthenticatedUser } from "@gzaccess/contracts";
@@ -78,5 +81,16 @@ describe("hasPermission", () => {
 
     expect(hashOpaqueToken(token)).toBe(hashOpaqueToken(token));
     expect(hashOpaqueToken(token)).not.toBe(token);
+  });
+
+  it("creates and verifies TOTP codes", () => {
+    const secret = createTotpSecret();
+    const date = new Date("2026-08-16T12:00:00.000Z");
+    const code = createTotpCode(secret, date);
+    const wrongCode = code === "000000" ? "000001" : "000000";
+
+    expect(code).toMatch(/^\d{6}$/);
+    expect(verifyTotpCode(secret, code, date)).toBe(true);
+    expect(verifyTotpCode(secret, wrongCode, date, 0)).toBe(false);
   });
 });

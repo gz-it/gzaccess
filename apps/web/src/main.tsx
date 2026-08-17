@@ -75,6 +75,9 @@ function App() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [parkingSpaces, setParkingSpaces] = useState<ParkingSpace[]>([]);
   const [residents, setResidents] = useState<Resident[]>([]);
+  const [mfaSetup, setMfaSetup] = useState<
+    { secret: string; otpauthUrl: string } | undefined
+  >();
   const [selectedBuildingId, setSelectedBuildingId] = useState("");
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -145,6 +148,7 @@ function App() {
       }>("/auth/login", {
         email: String(form.get("email")),
         password: String(form.get("password")),
+        mfaCode: String(form.get("mfaCode") || "") || undefined,
       });
       persistTokens(response.tokens);
       setUser(response.user);
@@ -230,6 +234,7 @@ function App() {
     setUnits([]);
     setParkingSpaces([]);
     setResidents([]);
+    setMfaSetup(undefined);
     setSelectedBuildingId("");
     setStatus("");
   }
@@ -402,6 +407,64 @@ function App() {
       setStatus(
         `Importados ${response.importedCount}; fallidos ${response.failedCount}`,
       );
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startMfaSetup() {
+    setBusy(true);
+    setStatus("");
+
+    try {
+      const response = await apiPostWithAuth<{
+        secret: string;
+        otpauthUrl: string;
+      }>("/auth/mfa/setup", {});
+      setMfaSetup(response);
+      setStatus("MFA preparado");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitMfaEnable(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setStatus("");
+
+    try {
+      await apiPostWithAuth("/auth/mfa/enable", {
+        code: String(form.get("code")),
+      });
+      setMfaSetup(undefined);
+      setStatus("MFA activado");
+      event.currentTarget.reset();
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitMfaDisable(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setStatus("");
+
+    try {
+      await apiPostWithAuth("/auth/mfa/disable", {
+        code: String(form.get("code")),
+      });
+      setMfaSetup(undefined);
+      setStatus("MFA desactivado");
       event.currentTarget.reset();
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -608,6 +671,34 @@ function App() {
                 </AdminForm>
               </Panel>
 
+              <Panel title="MFA">
+                <button
+                  className="secondary-action"
+                  disabled={busy}
+                  type="button"
+                  onClick={startMfaSetup}
+                >
+                  Preparar MFA
+                </button>
+                {mfaSetup ? (
+                  <p className="secret-value">{mfaSetup.secret}</p>
+                ) : null}
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Activar MFA"
+                  onSubmit={submitMfaEnable}
+                >
+                  <Field label="Codigo" name="code" />
+                </AdminForm>
+                <AdminForm
+                  busy={busy}
+                  submitLabel="Desactivar MFA"
+                  onSubmit={submitMfaDisable}
+                >
+                  <Field label="Codigo" name="code" />
+                </AdminForm>
+              </Panel>
+
               <Panel title="Poblacion">
                 <ResidentList residents={residents} />
               </Panel>
@@ -634,6 +725,7 @@ function App() {
               <AuthForm busy={busy} submitLabel="Entrar" onSubmit={submitLogin}>
                 <Field label="Email" name="email" type="email" />
                 <Field label="Password" name="password" type="password" />
+                <Field label="MFA" name="mfaCode" required={false} />
               </AuthForm>
             ) : null}
 

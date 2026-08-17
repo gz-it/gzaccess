@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createTotpCode } from "@gzaccess/auth";
 import { buildApp } from "./app.js";
 
 describe("api health", () => {
@@ -176,6 +177,93 @@ describe("auth flow", () => {
       },
     });
     expect(newLogin.statusCode).toBe(200);
+  });
+
+  it("configures TOTP MFA for platform admins", async () => {
+    const app = buildApp();
+    const bootstrap = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/dev/bootstrap-platform-admin",
+      payload: {
+        organizationName: "GZIT",
+        email: "mfa@gzit.test",
+        displayName: "MFA Admin",
+      },
+    });
+    const activationToken = bootstrap.json<{ activationToken: string }>()
+      .activationToken;
+
+    const activation = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/activation/complete",
+      payload: {
+        token: activationToken,
+        password: "Password!123",
+      },
+    });
+    const accessToken = activation.json<{
+      tokens: { accessToken: string };
+    }>().tokens.accessToken;
+
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/mfa/setup",
+      headers: authHeaders(accessToken),
+    });
+    expect(setup.statusCode).toBe(200);
+    const secret = setup.json<{ secret: string; otpauthUrl: string }>().secret;
+    expect(setup.json<{ otpauthUrl: string }>().otpauthUrl).toContain(
+      "otpauth://totp/",
+    );
+
+    const code = createTotpCode(secret);
+    const enabled = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/mfa/enable",
+      headers: authHeaders(accessToken),
+      payload: { code },
+    });
+    expect(enabled.statusCode).toBe(200);
+
+    const blockedLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "mfa@gzit.test",
+        password: "Password!123",
+      },
+    });
+    expect(blockedLogin.statusCode).toBe(401);
+    expect(blockedLogin.json()).toMatchObject({ error: "MFA_REQUIRED" });
+
+    const mfaLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "mfa@gzit.test",
+        password: "Password!123",
+        mfaCode: createTotpCode(secret),
+      },
+    });
+    expect(mfaLogin.statusCode).toBe(200);
+
+    const disabled = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/mfa/disable",
+      headers: authHeaders(accessToken),
+      payload: { code: createTotpCode(secret) },
+    });
+    expect(disabled.statusCode).toBe(200);
+
+    const loginWithoutMfa = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "mfa@gzit.test",
+        password: "Password!123",
+      },
+    });
+    expect(loginWithoutMfa.statusCode).toBe(200);
   });
 });
 

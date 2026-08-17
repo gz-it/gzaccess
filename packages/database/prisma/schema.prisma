@@ -63,6 +63,8 @@ model User {
   organizationId      String?
   email               String                   @unique
   passwordHash        String?
+  mfaSecret           String?
+  mfaEnabledAt        DateTime?
   displayName         String
   isActive            Boolean                  @default(true)
   createdAt           DateTime                 @default(now())

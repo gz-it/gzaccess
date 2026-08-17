@@ -269,3 +269,29 @@ Limitaciones:
 
 - El parser CSV web cubre comas y comillas dobles; importaciones masivas complejas deberian migrarse luego a carga de archivo con previsualizacion.
 - La invitacion real por email sigue pendiente hasta configurar proveedor de correo.
+
+## 2026-08-16 - Fase 1 MFA administrativo
+
+Comandos ejecutados:
+
+- `prisma format --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prisma generate --schema packages/database/prisma/schema.prisma`: paso con binario local.
+- `prettier --write ...`: paso con binario local para archivos modificados.
+- `eslint .`: paso con binario local.
+- `vitest run`: paso, 3 archivos y 22 tests.
+- `tsc -p ...`: paso para packages y apps principales.
+- `vite build`: paso desde `apps/web`.
+
+Alcance validado:
+
+- Generacion y verificacion TOTP de 6 digitos.
+- API protegida para preparar, activar y desactivar MFA.
+- MFA limitado a roles administrativos.
+- Login exige `mfaCode` cuando MFA esta activo.
+- Panel web permite preparar, activar y desactivar MFA.
+- Migracion incremental SQL preparada para campos MFA en `User`.
+
+Limitaciones:
+
+- El secreto TOTP queda persistido para verificacion. Antes de produccion conviene cifrar ese campo con KMS o secreto de aplicacion dedicado.
+- La migracion SQL esta versionada, pero no aplicada contra PostgreSQL real porque no hay Docker/VPS disponible en esta maquina.

@@ -59,9 +59,10 @@
 - [x] Helpers de autorizacion por permiso y organizacion.
 - [x] Persistencia real de auth con Prisma/PostgreSQL.
 - [x] Recuperacion de password.
-- [ ] MFA configurable para roles administrativos.
+- [x] MFA TOTP configurable para roles administrativos.
 - [x] Auditoria inicial de bootstrap, activacion, login y reset.
 - [x] UI web para login, activacion y recuperacion.
+- [x] UI web para configurar MFA administrativo.
 - [ ] UI mobile para login/activacion.
 
 ## Fase 2 checklist
